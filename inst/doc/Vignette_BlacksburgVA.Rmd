@@ -1,0 +1,884 @@
+---
+title: "wxgenR - Blacksburg, VA NWS Station"
+author: "Subhrendu Gangopadhyay, Lindsay Bearup, Andrew Verdin, Eylon Shamir, Eve Halper, David Woodson"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{wxgenR - Blacksburg, VA NWS Station}
+  %\VignetteEngine{knitr::rmarkdown}
+  \usepackage[utf8]{inputenc}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+A weather generator is a numerical tool that resamples an input timeseries many times, while
+preserving observed or projected characteristics of importance, such as the statistics of the
+transition between wet and dry days. The resulting large group, or ensemble, of likely rainfall
+and temperature timeseries represents a range of possible amounts, daily patterns, and
+seasonality. This weather generator is, to our knowledge, novel in that it includes *seasons* (up to 26) in training the simulation algorithm.  
+
+The goal of `wxgenR` is to provide users a tool that can simulate, with fidelity, an ensemble of precipitation and temperature based on training data that could include, for example, station based point measurements, grid cell values derived from models or remotely sensed data, or basin averages. The incorporation of seasonality as a covariate in the training algorithm allows users to examine the effects of shifts in seasonality due to climate warming (e.g., earlier snowmelt seasons or prolonged summer dry periods). `wxgenR` is an effective and robust scenario planning tool for a wide variety of potential futures. 
+
+## Running `wxgenR`
+
+All that is needed to run `wxgenR` is a single time series of precipitation, temperature, and season. Up to 20 seasons may be defined, but most users will likely only need two to four based on their study region. For example, `wxgenR` is provided with single station data from Blacksburg, Virgina, a temperate locale that is better defined by four seasons. Within the data used to train the weather generator, these four seasons should be noted with an index of either 1, 2, 3, or 4 for each day in the time series. The varying statistics of each season will impact the resulting simulations. Precipitation and temperature data are point measurements taken at the Blacksburg National Weather Service office (GHCND:USC00440766).
+
+
+## Tutorial
+
+For example, using the Blacksburg, VA National Weather Service station-based precipitation, temperature, and season from 1991 to 2020, we can generate simulated precipitation and temperature for any desired time length and ensemble size. Your variables *must* be named as the following: 'year', 'month', 'day', 'prcp', 'temp', 'season'. All input variables must be contained within the same dataframe or text file. If inputting a text file, it must be comma separated (.csv). The weather generator can handle NA values for precipitation or temperature, but all other variables should be numeric values.
+
+### Step 1: Load your data
+```{r}
+library(wxgenR)
+library(lubridate)
+library(dplyr)
+library(tidyr)
+library(reshape2)
+library(ggpubr)
+library(data.table)
+library(moments)
+library(seas)
+
+data(BlacksburgVA)
+
+head(BlacksburgVA)
+```
+
+### Step 2: Select your run settings and run the weather generator
+
+Use the variables within the wx() function like `syr` and `eyr` (start and end year) to set the temporal boundaries from which to sample, otherwise, if left empty the start and end years will default to the beginning and end of your training data. Use `nsim` to set the length (in years) of your simulated weather, and `nrealz` to set the ensemble size (number of traces). 
+
+The variable `wwidth` will set the sampling window for each day of year (Jan. 1 through Dec. 31) for every year in the simulation. The sampling window for each day of year is +/- `wwidth` + 1, effectively sampling `wwidth` number of days before and after each day of year, including that day of year. A lower value for `wwidth` will sample fewer surrounding days and a higher value will sample more days, resulting in dampened and heightened variability, respectively. Typical setting of `wwidth` is between 1 and 15, resulting in a daily sampling window of 3 days and 31 days, respectively. Generally, higher and lower values of `wwidth` result in higher and lower variance, respectively, in the simulated data. 
+
+For example, to simulate precipitation on day 1 of the simulation (Jan. 1 of year 1), with `wwidth` = 1 (a 3-day window), the algorithm will sample days in the training record between (and including) December 31 and January 2 (for all years in the training record). For day 2 of the simulation (Jan. 2 of year 1), the algorithm will sample days in the training record between January 1 and January 3. Simulation day 3 (Jan. 3) will sample between January 2 and January 4, and so on. Increasing `wwidth` to 2 (a 5-day window) will sample between December 30 and January 3 for Jan. 1 simulations, December 31 to January 4 for Jan. 2, and January 1 to January 5 for Jan. 3, and so on.    
+
+In some cases, the `wwidth` will be automatically increased through an adaptive window width if precipitation occurred on a given day but there were less than two daily precipitation values over 0.01 inches during the window for that day. `wwidth` will adaptively increase by 1 until two or more daily precipitation values over 0.01 inches are in each window. Adaptive window width is most likely to occur in regions with high aridity, dry seasons, a small initial value of `wwidth` is used, or if the number of years in the training data is relatively short (e.g., less than 30 years). To display the results of the adaptive window width, set `awinFlag = T`.
+
+Here, our training data spans 1991-01-01 to 2020-12-31, but we don't want to use the full historical record, so we set `syr` and `eyr` to 2000 and 2004, respectively, in the `wx()` function so that the training data is subset between those years. We want a simulation length of 5-years (`nsim`) in order to match the length of the subset training record and 10 traces in our ensemble (`nrealz`) for computational efficiency (although more traces, e.g. 50, are recommended). Sampling for each day of the year will sample from the preceding 1-day, the day of, and the following 1-day (`wwidth`) for a total window size of 3-days.
+
+We may also want to increase the variability of our simulated precipitation by sampling outside the historical envelope with an Epanechnikov Kernel (`ekflag = T`). For more details on the Epanechnikov kernel and its use in a weather generator, see Rajagopalan et al. (1996). Setting `tempPerturb = T` will increase the variability of the simulated temperature by adding random noise from a normal distribution fit using a mean of zero and a standard deviation equal to the monthly standard deviation of simulated temperature residuals. Given that simulated daily temperature at time t is a function of temperature(t-1), cosine(t), sine(t), precipitation occurrence(t), and monthly mean temperature(t), the standard deviation of daily residuals from this model is calculated for each month and used to add random noise to the simulated temperature. The temperature simulation approach is inspired by- and adapted from- Verdin et al. (2015, 2018).
+
+Since the training data has units of inches and degrees Fahrenheit for precipitation and temperature, respectively, we must set `unitSystem = "Metric"`. Setting `parallelize = T` will enable parallel computing for precipitation simulation which is the most computationally intensive aspect of the weather generator. 
+
+```{r, results='hide'}
+nsim = 5   #number of simulation years
+nrealz = 10 #number of traces in ensemble
+
+startTime <- Sys.time() #benchmark run time
+
+z = wx(trainingData = BlacksburgVA, syr = 2000, eyr = 2004,
+       nsim = nsim, nrealz = nrealz, aseed = 123,
+       wwidth = 1, unitSystem = "Metric", ekflag = TRUE,
+       awinFlag = TRUE, tempPerturb = TRUE, parallelize = FALSE)
+
+endTime = Sys.time()
+
+```
+
+The wx() function will return a list containing both your input/training data, and a variety of processed outputs, named here as the variable `z`. Within `z`, `dat.d` is the original input data as well as some intermediary variables. `simyr1` contains the years within your training data that were sampled to generate simulated values for each trace. `X` is the occurrence of daily precipitation for each trace, where 1 and 0 indicate the presence and absence of precipitation, respectively. `Xseas` is the season index for each day and trace. `Xpdate` shows which days from the training data were sampled for each simulated day and trace, if precipitation was simulated to occur on a given day. `Xpamt` is the simulated precipitation amount for each day and trace. `Xtemp` is the simulated temperature for each day and trace. 
+
+Generally, `Xpamt` and `Xtemp` will be of most interest to users as these are the desired outputs of simulated daily precipitation and temperature.
+
+
+```{r}
+# glimpse(z)
+```
+
+### Step 3: Analyze simulated weather
+### First, use modified approach from writeSim function to post-process/format output
+```{r}
+#parse variables from wx() output
+dat.d = z$dat.d
+simyr1 = z$simyr1
+X = z$X
+Xseas = z$Xseas
+Xpdate = z$Xpdate
+Xpamt = z$Xpamt
+Xtemp = z$Xtemp
+
+#write simulation output
+#
+it1 <- seq(1, length(X[,1]), 366)
+it2 = it1+366-1
+
+#initialize storage
+sim.pcp = matrix(NA, nrow = nsim*366, ncol = nrealz+3)
+sim.tmp = matrix(NA, nrow = nsim*366, ncol = nrealz+3)
+sim.szn = matrix(NA, nrow = nsim*366, ncol = nrealz+3)
+
+#loop through realization
+irealz = 1
+for (irealz in 1:nrealz){
+  
+  outmat <- vector()
+
+  #loop through simulation years
+  isim = 1
+  for (isim in 1:nsim){
+    leapflag = FALSE
+    ayr = simyr1[isim, irealz]
+    if (lubridate::leap_year(ayr)) leapflag = TRUE
+    col1 = rep(isim, 366)        #column 1, simulation year
+    d1 = ayr*10^4+01*10^2+01; d2 = ayr*10^4+12*10^2+31
+    i1 = which(dat.d$date1 == d1)
+    i2 = which(dat.d$date1 == d2)
+    col2 = dat.d$date1[i1:i2]   #column 2, simulation date
+    if (leapflag == FALSE) col2 = c(col2,NA)
+    i1 = it1[isim]
+    i2 = it2[isim]
+    col3 = Xseas[i1:i2, irealz]  #column 3, simulation season
+    col4 = X[i1:i2, irealz]      #column 4, precipitation occurrence
+    col5 = Xpdate[i1:i2, irealz] #column 5, precipation resampling date
+    col6 = Xpamt[i1:i2, irealz]  #column 6, resampled precipitation amount
+    col7 = Xtemp[i1:i2, irealz]  #column7, simulated temperature
+
+    #create time series of 'simulation day'
+    sim.yr = rep(isim, length(col2))
+    sim.month = month(ymd(col2))
+    sim.day = day(ymd(col2))
+
+    outmat = rbind(outmat, cbind(sim.yr, sim.month, sim.day, col6, col7, col3))
+  } #isim
+
+  colnames(outmat) = c("simulation year", "month", "day", "prcp", "temp", "season")
+  
+  if(irealz == 1){
+    sim.pcp[,1:3] = outmat[,1:3]
+    sim.tmp[,1:3] = outmat[,1:3]
+    sim.szn[,1:3] = outmat[,1:3]
+  }
+  
+    sim.pcp[,irealz+3] = outmat[,4]
+    sim.tmp[,irealz+3] = outmat[,5]
+    sim.szn[,irealz+3] = outmat[,6]
+
+} #irealz
+
+```
+
+#Format dataframes for simulated precip, temperature, and season
+```{r}
+
+# df = sim.pcp
+
+formatting = function(df){
+  
+  df = as.data.frame(df)
+  
+  colnames(df) = c("simulation year", "month", "day", paste0("Trace_", 1:nrealz))
+
+  #remove 366 days for non-leap years
+  df = drop_na(df, c(month, day))
+  
+  #assign simulation year to start at the same time as training data
+  df$`simulation year` = df$`simulation year` + dat.d$year[1] - 1    
+  
+  #format date
+  df$Date = ymd(paste(df$`simulation year`, df$month, df$day, sep = "-"))
+  
+  #remove years that aren't leap years
+  # df = drop_na(df, Date)
+  
+  df = df %>%
+    mutate(yday = as.numeric(yday(Date)),
+           week = as.numeric(week(Date))) %>%
+    relocate(c(Date,yday,week), .after = day) %>%
+    melt(id = 1:6)
+    
+  return(df)
+}
+```
+
+```{r}
+sim.pcp = formatting(sim.pcp)
+sim.tmp = formatting(sim.tmp)
+sim.szn = formatting(sim.szn)
+```
+
+### Format training data
+```{r}
+
+colnames(dat.d)[11] = "yday"
+obs.pcp = dat.d[,c(1:3,8:9,11,4)]
+obs.tmp = dat.d[,c(1:3,8:9,11,5)]
+
+```
+
+
+### First you might want to plot the daily time series for verification
+If your data contained NA values, they can propagate to simulated temperature values (NA precip values in your data are set to 0), so use `na.rm = T` for any subsequent analysis. You may also choose to replace `NA` values with daily or monthly averages. Additionally, leap years may be included in the simulated weather if they are included in your training data, so all non-leap years include a row of 'NA' values at the end of the calendar year as a book-keeping measure so that the total number of rows in each trace is the same.
+
+```{r}
+#plot simulated daily data
+# simDat = sim.tmp
+# obsDat = obs.tmp
+# Tag = "Temp"
+
+dailyPlot = function(simDat, obsDat, Tag){
+  
+  simD = simDat %>%
+    drop_na() %>%
+    group_by(variable, yday) %>%
+    summarise(
+      mean = mean(value, na.rm = T),
+      max = max(value, na.rm = T),
+      sd = sd(value, na.rm = T),
+      skew = skewness(value, na.rm = T)
+      ) %>%
+    ungroup()
+    
+  simDq <- simD %>%
+    group_by(yday) %>%
+    summarise(
+      mean_q5 = quantile(mean, 0.05, na.rm = T),
+      mean_med = median(mean, na.rm = T),
+      mean_q95 = quantile(mean, 0.95, na.rm =T),
+      max_q5 = quantile(max, 0.05, na.rm = T),
+      max_med = median(max, na.rm = T),
+      max_q95 = quantile(max, 0.95, na.rm = T),
+      sd_q5 = quantile(sd, 0.05, na.rm = T),
+      sd_med = median(sd),
+      sd_q95 = quantile(sd, 0.95, na.rm = T),
+      skew_q5 = quantile(skew, 0.05, na.rm = T),
+      skew_med = median(skew, na.rm = T),
+      skew_q95 = quantile(skew, 0.95, na.rm = T)
+      ) %>%
+      drop_na() %>%
+    ungroup()
+  
+  if(Tag == "Temp"){
+    obs <- obsDat %>%
+      drop_na() %>%
+      group_by(yday) %>%
+      summarise(
+        mean = mean(temp, na.rm = T),
+        max = max(temp, na.rm = T),
+        sd = sd(temp, na.rm = T),
+        skew = skewness(temp, na.rm = T)
+        ) %>%
+      ungroup()
+  } else if(Tag == "Precip"){
+    obs <- obsDat %>%
+      drop_na() %>%
+      group_by(yday) %>%
+      summarise(
+        mean = mean(prcp, na.rm = T),
+        max = max(prcp, na.rm = T),
+        sd = sd(prcp, na.rm = T),
+        skew = skewness(prcp, na.rm = T)
+        ) %>%
+      ungroup()
+    }
+
+  colnames(obs)[-1] = paste0("obs_", colnames(obs)[-1])
+  
+  df.comb = left_join(simDq, obs, by = "yday")
+  
+  #plotting --------------------------------
+  lgdLoc = c(0.8, 0.9)
+  
+  if(Tag == "Temp"){
+    yLabel = "Daily Temperature "
+    units = "(°F)"
+  } else if(Tag == "Precip"){
+    yLabel = "Daily Precipitation "
+    units = "(inches)"
+  }
+  
+  trnAlpha = 0.65
+  
+  #daily mean
+  p1 = ggplot(df.comb) +
+  geom_ribbon(aes(x = yday, ymin = mean_q5, ymax = mean_q95), alpha = 0.25) +
+  geom_line(aes(x = yday, y = mean_med, color = "red"), size = 1, alpha = 0.8) +
+  geom_line(aes(x = yday, y = obs_mean), size = 0.3, alpha = trnAlpha, linetype = "solid", color = "blue") +
+  geom_point(aes(x = yday, y = obs_mean), size = 0.6, alpha = trnAlpha, color = "blue") +
+  scale_colour_manual(values =c('blue'='blue','red'='red', 'grey' = 'grey'), labels = c('Training Data','Simulation Median', '95% Confidence')) +
+  theme_classic() +
+  theme(axis.title = element_text(face = "bold"),
+        # text=element_text(size=14),
+        panel.grid.major = element_line(),
+        legend.title=element_blank(),
+        legend.position = lgdLoc,
+        legend.background = element_blank(),
+        legend.box.background = element_blank(),
+        legend.key = element_blank()) +
+  xlab("Day of Year") + ylab(paste0("Mean ", yLabel, units))   
+  
+  #daily SD
+  p2 = ggplot(df.comb) +
+  geom_ribbon(aes(x = yday, ymin = sd_q5, ymax = sd_q95), alpha = 0.25) +
+  geom_line(aes(x = yday, y = sd_med, color = "red"), size = 1, alpha = 0.8) +
+  geom_line(aes(x = yday, y = obs_sd), size = 0.3, alpha = trnAlpha, linetype = "solid", color = "blue") +
+  geom_point(aes(x = yday, y = obs_sd), size = 0.6, alpha = trnAlpha, color = "blue") +
+  scale_colour_manual(values =c('blue'='blue','red'='red', 'grey' = 'grey'), labels = c('Training Data','Simulation Median', '95% Confidence')) +
+  theme_classic() +
+  theme(axis.title = element_text(face = "bold"),
+        # text=element_text(size=14),
+        panel.grid.major = element_line(),
+        legend.title=element_blank(),
+        legend.position = lgdLoc,
+        legend.background = element_blank(),
+        legend.box.background = element_blank(),
+        legend.key = element_blank()) +
+  xlab("Day of Year") + ylab(paste0("Std. Deviation of ", yLabel, units))   
+  
+  #daily skew
+  p3 = ggplot(df.comb) +
+  geom_ribbon(aes(x = yday, ymin = skew_q5, ymax = skew_q95), alpha = 0.25) +
+  geom_line(aes(x = yday, y = skew_med, color = "red"), size = 1, alpha = 0.8) +
+  geom_line(aes(x = yday, y = obs_skew), size = 0.3, alpha = trnAlpha, linetype = "solid", color = "blue") +
+  geom_point(aes(x = yday, y = obs_skew), size = 0.6, alpha = trnAlpha, color = "blue") +
+  scale_colour_manual(values =c('blue'='blue','red'='red', 'grey' = 'grey'), labels = c('Training Data','Simulation Median', '95% Confidence')) +
+  theme_classic() +
+  theme(axis.title = element_text(face = "bold"),
+        # text=element_text(size=14),
+        panel.grid.major = element_line(),
+        legend.title=element_blank(),
+        legend.position = lgdLoc,
+        legend.background = element_blank(),
+        legend.box.background = element_blank(),
+        legend.key = element_blank()) +
+  xlab("Day of Year") + ylab(paste0("Skew of ", yLabel, " (-)"))  
+    
+  
+  #daily Max
+  p4 = ggplot(df.comb) +
+  geom_ribbon(aes(x = yday, ymin = max_q5, ymax = max_q95), alpha = 0.25) +
+  geom_line(aes(x = yday, y = max_med, color = "red"), size = 1, alpha = 0.8) +
+  geom_line(aes(x = yday, y = obs_max), size = 0.3, alpha = trnAlpha, linetype = "solid", color = "blue") +
+  geom_point(aes(x = yday, y = obs_max), size = 0.6, alpha = trnAlpha, color = "blue") +
+  scale_colour_manual(values =c('blue'='blue','red'='red', 'grey' = 'grey'), labels = c('Training Data','Simulation Median', '95% Confidence')) +
+  theme_classic() +
+  theme(axis.title = element_text(face = "bold"),
+        # text=element_text(size=14),
+        panel.grid.major = element_line(),
+        legend.title=element_blank(),
+        legend.position = lgdLoc,
+        legend.background = element_blank(),
+        legend.box.background = element_blank(),
+        legend.key = element_blank()) +
+  xlab("Day of Year") + ylab(paste0("Maximum ", yLabel, units))  
+  
+  p.comb = ggarrange(p1, p2, p3, p4, nrow = 2, ncol = 2, common.legend = TRUE, legend = "bottom")
+  
+  print(p.comb)
+  
+  # p.out = paste0(tempdir(), "/outputPlots/dailyStats_", Tag, ".png")
+  # ggsave(filename = p.out, plot = p.comb, device = "png")
+
+}
+
+```
+
+### plot daily precipitation
+```{r, fig.width=8, fig.height=8}
+dailyPlot(sim.pcp, obs.pcp, "Precip")
+```
+
+### plot daily temperature
+```{r, fig.width=8, fig.height=8}
+dailyPlot(sim.tmp, obs.tmp, "Temp")
+```
+
+## Looking at just the daily mean may not be representative since weather may be very different depending on the season, so plot monthly statistics as well for more detail.
+Boxplot whiskers are in the style of Tukey (1.5 x interquartile range)
+```{r}
+#plot simulated daily data
+simDat = sim.tmp
+obsDat = obs.tmp
+Tag = "Temp"
+
+monthlyPlot = function(simDat, obsDat, Tag){
+  
+  if(Tag == "Temp"){
+    
+    simM = simDat %>%
+      drop_na() %>%
+      group_by(variable, month, `simulation year`) %>%
+      summarise(
+        mean = mean(value, na.rm = T),
+        max = max(value, na.rm = T),
+        sd = sd(value, na.rm = T),
+        skew = skewness(value, na.rm = T)
+        ) %>%
+      ungroup()
+    
+    simMM <- simM %>%
+      group_by(variable, month) %>%
+      summarise(
+        mean=mean(mean),
+        max=mean(max),
+        sd=sqrt(mean(sd^2)),
+        skew=mean(skew, na.rm=T)
+        ) %>%
+      ungroup()
+    
+    obs <- obsDat %>%
+      drop_na() %>%
+      group_by(month, year) %>%
+      summarise(
+        mean = mean(temp, na.rm = T),
+        max = max(temp, na.rm = T),
+        sd = sd(temp, na.rm = T),
+        skew = skewness(temp, na.rm = T)
+        ) %>%
+      ungroup()
+    
+    obsMM <- obs %>%
+      group_by(month) %>%
+      summarise(
+        mean = mean(mean, na.rm = T),
+        max = mean(max, na.rm = T),
+        sd = sqrt(mean(sd^2)),
+        skew = mean(skew, na.rm=T)
+        ) %>%
+      mutate(variable = "Observed") %>%
+      relocate(variable) %>%
+      ungroup()
+    
+  # colnames(obsMM)[-1] = paste0("obs_", colnames(obsMM)[-1])
+  
+  }else if(Tag == "Precip"){
+    
+    simM = simDat %>%
+      drop_na() %>%
+      group_by(variable, month, `simulation year`) %>%
+      summarise(
+        sum = sum(value, na.rm = T),
+        max = max(value, na.rm = T),
+        sd = sd(value, na.rm = T),
+        skew = skewness(value, na.rm = T)
+        ) %>%
+      ungroup()  
+    
+      simMM <- simM %>%
+        group_by(variable, month) %>%
+        summarise(
+          sum=mean(sum),
+          max=mean(max),
+          sd=sqrt(mean(sd^2)),
+          skew=mean(skew, na.rm=T)
+          ) %>%
+        ungroup()
+      
+      obs <- obsDat %>%
+        drop_na() %>%
+        group_by(month, year) %>%
+        summarise(
+          sum = sum(prcp, na.rm = T),
+          max = max(prcp, na.rm = T),
+          sd = sd(prcp, na.rm = T),
+          skew = skewness(prcp, na.rm = T)
+          ) %>%
+        ungroup()
+    
+      obsMM <- obs %>%
+        group_by(month) %>%
+        summarise(
+          sum = mean(sum, na.rm = T),
+          max = mean(max, na.rm = T),
+          sd = sqrt(mean(sd^2)),
+          skew = mean(skew, na.rm=T)
+          ) %>%
+        mutate(variable = "Observed") %>%
+        relocate(variable) %>%
+        ungroup()
+    
+  # colnames(obsMM)[-1] = paste0("obs_", colnames(obsMM)[-1])
+  
+  }
+  
+  df.comb = rbind(obsMM, simMM)
+  
+  #plotting --------------------------------
+  if(Tag == "Temp"){
+    
+    p1 = ggplot(df.comb) + 
+      geom_boxplot(data = subset(df.comb, variable != "Observed"), aes(x = month, y = mean, group = month)) +
+      geom_line(data = subset(df.comb, variable == "Observed"), size = 0.5, aes(x = month, y = mean, color = "Observed")) +
+      geom_point(data = subset(df.comb, variable == "Observed"), size = 1.5, aes(x = month, y = mean, color = "Observed")) +
+      xlab("Month") + ylab("Temperature (°F)") +
+      theme_classic() +
+      theme(axis.title = element_text(face = "bold"),
+            text=element_text(size=12),
+            panel.grid.major = element_line(),
+            legend.title=element_blank(),
+            plot.title = element_text(size=10)
+            ) +
+      scale_x_continuous(breaks = 1:12) +
+      ggtitle("Average Mean Monthly Temperature")
+  
+  }else if(Tag == "Precip"){
+    
+     p1 = ggplot(df.comb) + 
+      geom_boxplot(data = subset(df.comb, variable != "Observed"), aes(x = month, y = sum, group = month)) +
+      geom_line(data = subset(df.comb, variable == "Observed"), size = 0.5, aes(x = month, y = sum, color = "Observed")) +
+      geom_point(data = subset(df.comb, variable == "Observed"), size = 1.5, aes(x = month, y = sum, color = "Observed")) +
+      xlab("Month") + ylab("Precipitation (inches)") +
+      theme_classic() +
+      theme(axis.title = element_text(face = "bold"),
+            text=element_text(size=12),
+            panel.grid.major = element_line(),
+            legend.title=element_blank(),
+            plot.title = element_text(size=10)
+            ) +
+      scale_x_continuous(breaks = 1:12) +
+      ggtitle("Average Total Monthly Precipitation")
+    
+  }
+  
+  if(Tag == "Temp"){
+    yLabel = "Temperature "
+    units = "(°F)"
+  } else if(Tag == "Precip"){
+    yLabel = "Precipitation "
+    units = "(inches)"
+  }
+  
+  #monthly SD
+  p2 = ggplot(df.comb) + 
+      geom_boxplot(data = subset(df.comb, variable != "Observed"), aes(x = month, y = sd, group = month)) +
+      geom_line(data = subset(df.comb, variable == "Observed"), size = 0.5, aes(x = month, y = sd, color = "Observed")) +
+      geom_point(data = subset(df.comb, variable == "Observed"), size = 1.5, aes(x = month, y = sd, color = "Observed")) +
+      xlab("Month") + ylab(paste0("Standard Deviation ", units)) +
+      theme_classic() +
+      theme(axis.title = element_text(face = "bold"),
+            text=element_text(size=12),
+            panel.grid.major = element_line(),
+            legend.title=element_blank(),
+            plot.title = element_text(size=10)
+            ) +
+      scale_x_continuous(breaks = 1:12) +
+      ggtitle(paste0("Average Standard Deviation in Monthly ", yLabel))
+  
+  
+  #monthly Skew
+  p3 = ggplot(df.comb) + 
+      geom_boxplot(data = subset(df.comb, variable != "Observed"), aes(x = month, y = skew, group = month)) +
+      geom_line(data = subset(df.comb, variable == "Observed"), size = 0.5, aes(x = month, y = skew, color = "Observed")) +
+      geom_point(data = subset(df.comb, variable == "Observed"), size = 1.5, aes(x = month, y = skew, color = "Observed")) +
+      xlab("Month") + ylab("Skew (-)") +
+      theme_classic() +
+      theme(axis.title = element_text(face = "bold"),
+            text=element_text(size=12),
+            panel.grid.major = element_line(),
+            legend.title=element_blank(),
+            plot.title = element_text(size=10)
+            ) +
+      scale_x_continuous(breaks = 1:12) +
+      ggtitle(paste0("Average Skew in Monthly ", yLabel))
+  
+  
+  #monthly max
+  p4 = ggplot(df.comb) + 
+      geom_boxplot(data = subset(df.comb, variable != "Observed"), aes(x = month, y = max, group = month)) +
+      geom_line(data = subset(df.comb, variable == "Observed"), size = 0.5, aes(x = month, y = max, color = "Observed")) +
+      geom_point(data = subset(df.comb, variable == "Observed"), size = 1.5, aes(x = month, y = max, color = "Observed")) +
+      xlab("Month") + ylab(paste0("Maximum ", units)) +
+      theme_classic() +
+      theme(axis.title = element_text(face = "bold"),
+            text=element_text(size=12),
+            panel.grid.major = element_line(),
+            legend.title=element_blank(),
+            plot.title = element_text(size=10)
+            ) +
+      scale_x_continuous(breaks = 1:12) +
+      ggtitle(paste0("Average Monthly Maximum ", yLabel))
+  
+  p.comb = ggarrange(p1, p2, p3, p4, nrow = 2, ncol = 2, common.legend = TRUE, legend = "bottom")
+  
+  print(p.comb)
+  
+  p.out = paste0(tempdir(), "/outputPlots/monthlyStats_", Tag, ".png")
+  # ggsave(filename = p.out, plot = p.comb, device = "png", height = 8, width = 8, units = "in")
+
+}
+
+```
+
+
+### plot monthly precipitation
+```{r, fig.width=8, fig.height=8}
+monthlyPlot(sim.pcp, obs.pcp, "Precip")
+```
+
+### plot monthly temperature
+```{r, fig.width=8, fig.height=8}
+monthlyPlot(sim.tmp, obs.tmp, "Temp")
+```
+
+
+## Weekly statistics offer a finer resolution than monthly statistics but are not as noisy as daily values.
+Boxplot whiskers are in the style of Tukey (1.5 x interquartile range)
+```{r}
+#plot simulated daily data
+simDat = sim.tmp
+obsDat = obs.tmp
+Tag = "Temp"
+
+weeklyPlot = function(simDat, obsDat, Tag){
+  
+  if(Tag == "Temp"){
+    
+    simW = simDat %>%
+      drop_na() %>%
+      group_by(variable, week, `simulation year`) %>%
+      summarise(
+        mean = mean(value, na.rm = T),
+        max = max(value, na.rm = T),
+        sd = sd(value, na.rm = T),
+        skew = skewness(value, na.rm = T)
+        ) %>%
+      ungroup()
+    
+    simWW <- simW %>%
+      group_by(variable, week) %>%
+      summarise(
+        mean=mean(mean),
+        max=mean(max),
+        sd=sqrt(mean(sd^2)),
+        skew=mean(skew, na.rm=T)
+        ) %>%
+      ungroup()
+    
+    obs <- obsDat %>%
+      drop_na() %>%
+      group_by(week, year) %>%
+      summarise(
+        mean = mean(temp, na.rm = T),
+        max = max(temp, na.rm = T),
+        sd = sd(temp, na.rm = T),
+        skew = skewness(temp, na.rm = T)
+        ) %>%
+      ungroup()
+    
+    obsWW <- obs %>%
+      group_by(week) %>%
+      summarise(
+        mean = mean(mean, na.rm = T),
+        max = mean(max, na.rm = T),
+        sd = sqrt(mean(sd^2)),
+        skew = mean(skew, na.rm=T)
+        ) %>%
+      mutate(variable = "Observed") %>%
+      relocate(variable) %>%
+      ungroup()
+    
+  # colnames(obsMM)[-1] = paste0("obs_", colnames(obsMM)[-1])
+  
+  }else if(Tag == "Precip"){
+    
+    simW = simDat %>%
+      drop_na() %>%
+      group_by(variable, week, `simulation year`) %>%
+      summarise(
+        sum = sum(value, na.rm = T),
+        max = max(value, na.rm = T),
+        sd = sd(value, na.rm = T),
+        skew = skewness(value, na.rm = T)
+        ) %>%
+      ungroup()  
+    
+      simWW <- simW %>%
+        group_by(variable, week) %>%
+        summarise(
+          sum=mean(sum),
+          max=mean(max),
+          sd=sqrt(mean(sd^2)),
+          skew=mean(skew, na.rm=T)
+          ) %>%
+        ungroup()
+      
+      obs <- obsDat %>%
+        drop_na() %>%
+        group_by(week, year) %>%
+        summarise(
+          sum = sum(prcp, na.rm = T),
+          max = max(prcp, na.rm = T),
+          sd = sd(prcp, na.rm = T),
+          skew = skewness(prcp, na.rm = T)
+          ) %>%
+        ungroup()
+    
+      obsWW <- obs %>%
+        group_by(week) %>%
+        summarise(
+          sum = mean(sum, na.rm = T),
+          max = mean(max, na.rm = T),
+          sd = sqrt(mean(sd^2)),
+          skew = mean(skew, na.rm=T)
+          ) %>%
+        mutate(variable = "Observed") %>%
+        relocate(variable) %>%
+        ungroup()
+    
+  # colnames(obsMM)[-1] = paste0("obs_", colnames(obsMM)[-1])
+  
+  }
+  
+  df.comb = rbind(obsWW, simWW)
+  
+  #plotting --------------------------------
+  if(Tag == "Temp"){
+    
+    p1 = ggplot(df.comb) + 
+      geom_boxplot(data = subset(df.comb, variable != "Observed"), aes(x = week, y = mean, group = week)) +
+      geom_line(data = subset(df.comb, variable == "Observed"), size = 0.5, aes(x = week, y = mean, color = "Observed")) +
+      geom_point(data = subset(df.comb, variable == "Observed"), size = 1.5, aes(x = week, y = mean, color = "Observed")) +
+      xlab("Week") + ylab("Temperature (°F)") +
+      theme_classic() +
+      theme(axis.title = element_text(face = "bold"),
+            text=element_text(size=12),
+            panel.grid.major = element_line(),
+            legend.title=element_blank(),
+            plot.title = element_text(size=10)
+            ) +
+      scale_x_continuous(breaks = seq(1,52,2)) +
+      ggtitle("Average Mean Weekly Temperature")
+  
+  }else if(Tag == "Precip"){
+    
+     p1 = ggplot(df.comb) + 
+      geom_boxplot(data = subset(df.comb, variable != "Observed"), aes(x = week, y = sum, group = week)) +
+      geom_line(data = subset(df.comb, variable == "Observed"), size = 0.5, aes(x = week, y = sum, color = "Observed")) +
+      geom_point(data = subset(df.comb, variable == "Observed"), size = 1.5, aes(x = week, y = sum, color = "Observed")) +
+      xlab("Week") + ylab("Precipitation (inches)") +
+      theme_classic() +
+      theme(axis.title = element_text(face = "bold"),
+            text=element_text(size=12),
+            panel.grid.major = element_line(),
+            legend.title=element_blank(),
+            plot.title = element_text(size=10)
+            ) +
+      scale_x_continuous(breaks = seq(1,52,2)) +
+      ggtitle("Average Total Weekly Precipitation")
+    
+  }
+  
+  if(Tag == "Temp"){
+    yLabel = "Temperature "
+    units = "(°F)"
+  } else if(Tag == "Precip"){
+    yLabel = "Precipitation "
+    units = "(inches)"
+  }
+  
+  #weekly SD
+  p2 = ggplot(df.comb) + 
+      geom_boxplot(data = subset(df.comb, variable != "Observed"), aes(x = week, y = sd, group = week)) +
+      geom_line(data = subset(df.comb, variable == "Observed"), size = 0.5, aes(x = week, y = sd, color = "Observed")) +
+      geom_point(data = subset(df.comb, variable == "Observed"), size = 1.5, aes(x = week, y = sd, color = "Observed")) +
+      xlab("Week") + ylab(paste0("Standard Deviation ", units)) +
+      theme_classic() +
+      theme(axis.title = element_text(face = "bold"),
+            text=element_text(size=12),
+            panel.grid.major = element_line(),
+            legend.title=element_blank(),
+            plot.title = element_text(size=10)
+            ) +
+      scale_x_continuous(breaks = seq(1,52,2)) +
+      ggtitle(paste0("Average Standard Deviation in Weekly ", yLabel))
+  
+  
+  #weekly Skew
+  p3 = ggplot(df.comb) + 
+      geom_boxplot(data = subset(df.comb, variable != "Observed"), aes(x = week, y = skew, group = week)) +
+      geom_line(data = subset(df.comb, variable == "Observed"), size = 0.5, aes(x = week, y = skew, color = "Observed")) +
+      geom_point(data = subset(df.comb, variable == "Observed"), size = 1.5, aes(x = week, y = skew, color = "Observed")) +
+      xlab("Week") + ylab("Skew (-)") +
+      theme_classic() +
+      theme(axis.title = element_text(face = "bold"),
+            text=element_text(size=12),
+            panel.grid.major = element_line(),
+            legend.title=element_blank(),
+            plot.title = element_text(size=10)
+            ) +
+      scale_x_continuous(breaks = seq(1,52,2)) +
+      ggtitle(paste0("Average Skew in Weekly ", yLabel))
+  
+  
+  #weekly max
+  p4 = ggplot(df.comb) + 
+      geom_boxplot(data = subset(df.comb, variable != "Observed"), aes(x = week, y = max, group = week)) +
+      geom_line(data = subset(df.comb, variable == "Observed"), size = 0.5, aes(x = week, y = max, color = "Observed")) +
+      geom_point(data = subset(df.comb, variable == "Observed"), size = 1.5, aes(x = week, y = max, color = "Observed")) +
+      xlab("Week") + ylab(paste0("Maximum ", units)) +
+      theme_classic() +
+      theme(axis.title = element_text(face = "bold"),
+            text=element_text(size=12),
+            panel.grid.major = element_line(),
+            legend.title=element_blank(),
+            plot.title = element_text(size=10)
+            ) +
+      scale_x_continuous(breaks = seq(1,52,2)) +
+      ggtitle(paste0("Average Weekly Maximum ", yLabel))
+  
+  p.comb = ggarrange(p1, p2, p3, p4, nrow = 2, ncol = 2, common.legend = TRUE, legend = "bottom")
+  
+  print(p.comb)
+  
+  p.out = paste0(tempdir(), "/outputPlots/weeklyStats_", Tag, ".png")
+  # ggsave(filename = p.out, plot = p.comb, device = "png", height = 8, width = 10, units = "in")
+
+}
+
+```
+
+
+### plot weekly precipitation
+```{r, fig.width=10, fig.height=8}
+weeklyPlot(sim.pcp, obs.pcp, "Precip")
+```
+
+### plot weekly temperature
+```{r, fig.width=10, fig.height=8}
+weeklyPlot(sim.tmp, obs.tmp, "Temp")
+```
+
+
+### Step 4: Save your data to file 
+
+Save your simulated weather ensemble to a file via the `writeSim` function. It will conveniently save each trace to a .csv file. 
+```{r}
+
+# setwd() to desired location for writeSim to save .csv files containing the simulated precipitation and temperature
+# setwd(tempdir())
+#
+# writeSim(wxOutput = z, nsim = nsim, nrealz = nrealz, debug = TRUE)
+
+
+```
+
+### Performance Benchmarking
+
+Running the `wx()` weather generator code for a 10-year, 50-trace simulation on a laptop with the following characteristics results in the below run time. Parallel computing was enabled via `parallelize = T` in the wx() functoin.
+OS: Microsoft Windows 10 Enterprise 10.0.19044 Build 19044
+Hardware: Intel(R) Core(TM) i7-10850H CPU @2.70GHz, 2712 Mhz, 6 Cores, 12 Logical Processors. 16 GB installed physical memory.
+```{r}
+  #wxgenR weather generation run time:
+  print(difftime(endTime, startTime, units='mins'))
+```
+
+## Citations
+
+For more details and examples, including analysis of the dataset used in this vignette, see the following works:
+
+    Bearup, L., Gangopadhyay, S., & Mikkelson, K. (2021). Hydroclimate Analysis Lower Santa Cruz River Basin Study (Technical Memorandum No ENV-2020-056). Bureau of Reclamation. https://www.usbr.gov/lc/phoenix/programs/lscrbasin/LSCRBS_Hydroclimate_2021.pdf
+    
+    Gangopadhyay, S., Bearup, L. A., Verdin, A., Pruitt, T., Halper, E., & Shamir, E. (2019, December 1). A collaborative stochastic weather generator for climate impacts assessment in the Lower Santa Cruz River Basin, Arizona. Fall Meeting 2019, American Geophysical Union. https://ui.adsabs.harvard.edu/abs/2019AGUFMGC41G1267G
+
+    Rajagopalan, B., Lall, U., and Tarboton, D. G.: Nonhomogeneous Markov Model for Daily Precipitation, Journal of Hydrologic Engineering, 1, 33–40, https://doi.org/10.1061/(ASCE)1084-0699(1996)1:1(33), 1996.
+
+    Verdin, A., Rajagopalan, B., Kleiber, W., and Katz, R. W.: Coupled stochastic weather generation using spatial and generalized linear models, Stoch Environ Res Risk Assess, 29, 347–356, https://doi.org/10.1007/s00477-014-0911-6, 2015.
+
+    Verdin, A., Rajagopalan, B., Kleiber, W., Podestá, G., and Bert, F.: A conditional stochastic weather generator for seasonal to multi-decadal simulations, Journal of Hydrology, 556, 835–846, https://doi.org/10.1016/j.jhydrol.2015.12.036, 2018.
+
+
+

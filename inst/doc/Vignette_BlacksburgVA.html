@@ -12,7 +12,7 @@
 
 <meta name="author" content="Subhrendu Gangopadhyay, Lindsay Bearup, Andrew Verdin, Eylon Shamir, Eve Halper, David Woodson" />
 
-<meta name="date" content="2023-09-13" />
+<meta name="date" content="2023-09-17" />
 
 <title>wxgenR - Blacksburg, VA NWS Station</title>
 
@@ -335,7 +335,7 @@ code > span.er { color: #a61717; background-color: #e3d2d2; }
 <h1 class="title toc-ignore">wxgenR - Blacksburg, VA NWS Station</h1>
 <h4 class="author">Subhrendu Gangopadhyay, Lindsay Bearup, Andrew
 Verdin, Eylon Shamir, Eve Halper, David Woodson</h4>
-<h4 class="date">2023-09-13</h4>
+<h4 class="date">2023-09-17</h4>
 
 
 
@@ -2039,16 +2039,16 @@ a .csv file.</p>
 </div>
 <div id="performance-benchmarking" class="section level3">
 <h3>Performance Benchmarking</h3>
-<p>Running the <code>wx()</code> weather generator code for a 10-year,
-50-trace simulation on a laptop with the following characteristics
+<p>Running the <code>wx()</code> weather generator code for a 5-year,
+10-trace simulation on a laptop with the following characteristics
 results in the below run time. Parallel computing was enabled via
-<code>parallelize = T</code> in the wx() functoin. OS: Microsoft Windows
+<code>parallelize = T</code> in the wx() function. OS: Microsoft Windows
 10 Enterprise 10.0.19044 Build 19044 Hardware: Intel(R) Core(TM)
 i7-10850H CPU <span class="citation">@2.70GHz</span>, 2712 Mhz, 6 Cores,
 12 Logical Processors. 16 GB installed physical memory.</p>
 <div class="sourceCode" id="cb18"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb18-1"><a href="#cb18-1" aria-hidden="true" tabindex="-1"></a>  <span class="co">#wxgenR weather generation run time:</span></span>
 <span id="cb18-2"><a href="#cb18-2" aria-hidden="true" tabindex="-1"></a>  <span class="fu">print</span>(<span class="fu">difftime</span>(endTime, startTime, <span class="at">units=</span><span class="st">&#39;mins&#39;</span>))</span>
-<span id="cb18-3"><a href="#cb18-3" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; Time difference of 0.2590129 mins</span></span></code></pre></div>
+<span id="cb18-3"><a href="#cb18-3" aria-hidden="true" tabindex="-1"></a><span class="co">#&gt; Time difference of 0.2989785 mins</span></span></code></pre></div>
 </div>
 </div>
 <div id="citations" class="section level2">
@@ -2064,6 +2064,14 @@ Rajagopalan, B., Lall, U., and Tarboton, D. G.: Nonhomogeneous Markov Model for 
 Verdin, A., Rajagopalan, B., Kleiber, W., and Katz, R. W.: Coupled stochastic weather generation using spatial and generalized linear models, Stoch Environ Res Risk Assess, 29, 347–356, https://doi.org/10.1007/s00477-014-0911-6, 2015.
 
 Verdin, A., Rajagopalan, B., Kleiber, W., Podestá, G., and Bert, F.: A conditional stochastic weather generator for seasonal to multi-decadal simulations, Journal of Hydrology, 556, 835–846, https://doi.org/10.1016/j.jhydrol.2015.12.036, 2018.</code></pre>
+</div>
+<div id="disclaimer" class="section level2">
+<h2>Disclaimer</h2>
+<p>This information is preliminary and is subject to revision. It is
+being provided to meet the need for timely best science. The information
+is provided on the condition that neither the U.S. Bureau of Reclamation
+nor the U.S. Government may be held liable for any damages resulting
+from the authorized or unauthorized use of the information.</p>
 </div>
 
 

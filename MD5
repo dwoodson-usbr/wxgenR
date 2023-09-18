@@ -1,4 +1,4 @@
-abbfd4a4a2416168fa333c2b0d9fabe0 *DESCRIPTION
+22b488fb6c670e2f9415b54ff7c62448 *DESCRIPTION
 8b0ee023e770b68d1fec60da95f1186d *NAMESPACE
 856c87ccb36470b5fc4a587aae7b37a4 *R/BlacksburgVA.R
 897b66939d1956350f1d657c6fb14ea3 *R/LowerSantaCruzRiverBasin.R
@@ -19,11 +19,11 @@ da2d0b23c6dcf92099f03d049b6ce9d5 *R/wx.R
 a2b995447da65d21f9a77698882ff8fd *data/BlacksburgVA.rda
 214fa952a4bdd5f1c66c1c13c96a6a02 *data/LowerSantaCruzRiverBasinAZ.rda
 95d3742233c5435d86416042fc0e829f *inst/doc/Vignette_BlacksburgVA.R
-fde09a37fae7cf23163c83f6901cec76 *inst/doc/Vignette_BlacksburgVA.Rmd
-e5feea44c3a615974f05f5df344c017a *inst/doc/Vignette_BlacksburgVA.html
+01e20bbcee9dd7dbbc73581de0a1ed0b *inst/doc/Vignette_BlacksburgVA.Rmd
+571a807ee21a08e459aabea6ebe8ec63 *inst/doc/Vignette_BlacksburgVA.html
 d9b4f5cbd82388fad0509ab2d22d60d6 *inst/doc/Vignette_LowerSantaCruzRiverBasinAZ.R
-6cf718793208f51dfa8dc8e063f5f438 *inst/doc/Vignette_LowerSantaCruzRiverBasinAZ.Rmd
-7d9bf768ac172e4c38b18f55077a49af *inst/doc/Vignette_LowerSantaCruzRiverBasinAZ.html
+7790294821eb70ef1dd0e1b8dc9f3464 *inst/doc/Vignette_LowerSantaCruzRiverBasinAZ.Rmd
+dd7c28f3f78ab8207a3841b21992a0ce *inst/doc/Vignette_LowerSantaCruzRiverBasinAZ.html
 ea718c5b5cbb1fde40a34719c61cec2f *man/BlacksburgVA.Rd
 c2a1d82149b4bb41a87fbe9a8b068a72 *man/LowerSantaCruzRiverBasinAZ.Rd
 4fa80dfa279e171bd479e0274d0bd37f *man/getDatesInWindow.Rd
@@ -33,5 +33,5 @@ e5f0c42599dadbf3ddf74ea4b3105326 *man/selectState.Rd
 02fe5d44aca56c95579ed33370a71258 *man/writeSim.Rd
 cfbc66caea9a791ccc1b6b9b3919d0da *man/wx.Rd
 fc56b2fd9191369afa7dfbf62ab591d7 *man/wxgenR.Rd
-fde09a37fae7cf23163c83f6901cec76 *vignettes/Vignette_BlacksburgVA.Rmd
-6cf718793208f51dfa8dc8e063f5f438 *vignettes/Vignette_LowerSantaCruzRiverBasinAZ.Rmd
+01e20bbcee9dd7dbbc73581de0a1ed0b *vignettes/Vignette_BlacksburgVA.Rmd
+7790294821eb70ef1dd0e1b8dc9f3464 *vignettes/Vignette_LowerSantaCruzRiverBasinAZ.Rmd

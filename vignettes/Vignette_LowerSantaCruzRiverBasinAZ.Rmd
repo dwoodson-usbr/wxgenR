@@ -1037,7 +1037,7 @@ Save your simulated weather ensemble to a file via the `writeSim` function. It w
 
 ### Performance Benchmarking
 
-Running the `wx()` weather generator code for a 30-year, 50-trace simulation on a laptop with the following characteristics results in the below run time. Parallel computing was enabled via `parallelize = T` in the wx() functoin.
+Running the `wx()` weather generator code for a 5-year, 10-trace simulation on a laptop with the following characteristics results in the below run time. Parallel computing was enabled via `parallelize = T` in the wx() function.
 OS: Microsoft Windows 10 Enterprise 10.0.19044 Build 19044
 Hardware: Intel(R) Core(TM) i7-10850H CPU @2.70GHz, 2712 Mhz, 6 Cores, 12 Logical Processors. 16 GB installed physical memory.
 ```{r}
@@ -1068,5 +1068,7 @@ For more details and examples, including analysis of the dataset used in this vi
 
     Verdin, A., Rajagopalan, B., Kleiber, W., Podestá, G., and Bert, F. (2018). A conditional stochastic weather generator for seasonal to multi-decadal simulations, Journal of Hydrology, 556, 835–846, <https://doi.org/10.1016/j.jhydrol.2015.12.036>.
 
+## Disclaimer
 
+This information is preliminary and is subject to revision. It is being provided to meet the need for timely best science. The information is provided on the condition that neither the U.S. Bureau of Reclamation nor the U.S. Government may be held liable for any damages resulting from the authorized or unauthorized use of the information.
 

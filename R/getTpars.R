@@ -16,7 +16,7 @@
 #' @noRd
 #'
 
-"getTpars" <- function(dat.d){
+"getTpars" <- function(dat.d, pcpOccFlag){
   #calculate paramters for temperature simulation
   #
   # require("plyr")
@@ -67,7 +67,11 @@
   #define design matrix (covariates)
   #temp(t) is a function of:
   #[temp(t-1); cosine(t); sine(t); prec.occ(t); mon.mean.temp(t)]
-  x.tmp <- cbind(ptmp, ct, st, oc, Rt)
+  if(pcpOccFlag == TRUE){
+    x.tmp <- cbind(ptmp, ct, st, oc, Rt)
+  }else if(pcpOccFlag == FALSE){
+    x.tmp <- cbind(ptmp, ct, st, Rt)
+    }
   z.tmp <- lm(tmp ~ x.tmp)
   z.tmp.res <- z.tmp$residuals
   coeftmp <- z.tmp$coefficients

@@ -17,18 +17,19 @@ library(seas)
 
 data(BlacksburgVA)
 
-head(BlacksburgVA)
+# head(BlacksburgVA)
 
 ## ---- results='hide'----------------------------------------------------------
 nsim = 5   #number of simulation years
-nrealz = 10 #number of traces in ensemble
+nrealz = 2 #number of traces in ensemble
 
 startTime <- Sys.time() #benchmark run time
 
 z = wx(trainingData = BlacksburgVA, syr = 2000, eyr = 2004,
        nsim = nsim, nrealz = nrealz, aseed = 123,
        wwidth = 1, unitSystem = "Metric", ekflag = TRUE,
-       awinFlag = TRUE, tempPerturb = TRUE, parallelize = FALSE)
+       awinFlag = FALSE, tempPerturb = TRUE, pcpOccFlag = FALSE,
+       numbCores = 2)
 
 endTime = Sys.time()
 
@@ -749,10 +750,10 @@ weeklyPlot = function(simDat, obsDat, Tag){
 
 
 ## ---- fig.width=10, fig.height=8----------------------------------------------
-weeklyPlot(sim.pcp, obs.pcp, "Precip")
+# weeklyPlot(sim.pcp, obs.pcp, "Precip")
 
 ## ---- fig.width=10, fig.height=8----------------------------------------------
-weeklyPlot(sim.tmp, obs.tmp, "Temp")
+# weeklyPlot(sim.tmp, obs.tmp, "Temp")
 
 ## -----------------------------------------------------------------------------
 

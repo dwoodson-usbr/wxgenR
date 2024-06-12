@@ -12,7 +12,7 @@
 #'
 #' @keywords data
 #'
-#' @source \href{https://www.usbr.gov/lc/phoenix/programs/lscrbasin/LSCRBS_Hydroclimate_2021.pdf}{Hydroclimate Analysis - Lower Santa Cruz River Basin Study}
+#' @source Hydroclimate Analysis - Lower Santa Cruz River Basin Study
 #'
 #' @examples
 #' data(LowerSantaCruzRiverBasinAZ)

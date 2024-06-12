@@ -10,7 +10,7 @@
 #' @param nrealz Number of realizations.
 #' @param Xjday Julian day when prcp occurs, from simTPocc function
 #' @param ekflag Simulate outside historical envelope?
-#' @param parallelize Enable parallel computing for precip simulation, set T to enable
+#' @param numbCores Enable parallel computing for precipitation simulation, set number of cores to enable (must be a positive integer greater than or equal to 2). Turned off by default; if set to 0 or 1 it will run as single thread. Use function 'detectCores()' from 'parallel' package to show the number of available cores on your machine.
 #'
 # @import lubridate
 # @import parallel
@@ -22,7 +22,7 @@
 #' @noRd
 #'
 
-"simPamt" <- function(dat.d,syr,eyr,wwidth,nsim,nrealz,Xjday,ekflag,awinFlag,parallelize){
+"simPamt" <- function(dat.d,syr,eyr,wwidth,nsim,nrealz,Xjday,ekflag,awinFlag,numbCores){
   # require("sm")
   #simulate precipitation amounts and select dates
   #
@@ -77,10 +77,6 @@
 
       }
 
-      # if(awinFlag == T & wwidth.adapt != wwidth){
-      #   cat(paste0("\n Window width too small on Julian day ", jday,", increased window to ", wwidth.adapt*2+1, " days\n"))
-      # }
-
       diwprcp[jday] = length(pamt)
       logpamt <- log(pamt)                #log-transformed precipitation amount vector
       bSJ[jday] = hsj(logpamt)          #Sheather-Jones plug-in bandwidth
@@ -91,13 +87,19 @@
   #simulate precipitation amount and select prcp date
   # Xpdate <- Xpamt <- matrix(NA, nrow=nsim*366, ncol=nrealz)
 
-  if(parallelize == T){
+  if(numbCores >= 2){
 
     Xpdate <- Xpamt <- matrix(NA, nrow=nsim*366, ncol=1)
 
     # library(foreach)
     # library(doParallel)
-    cl <- makePSOCKcluster(detectCores()-1)
+
+    if(numbCores > detectCores()){
+      message(paste0("numbCores is set to more than the ", detectCores(), " available cores on your machine. Setting numbCores to ", detectCores()-1, " cores (leaving one core free)."))
+      message(paste0("If you wish, interupt code to set a new value for numbCores that is between 2 and ", detectCores(), ", otherwise the simulation will continue."))
+    }
+
+    cl = makePSOCKcluster(numbCores)
     registerDoParallel(cl)
 
     # startTime <- Sys.time() #benchmark run time
@@ -161,13 +163,10 @@
             pdate <- diw[which(baprcp>=0.01)]   #dates in window where prcp occurred
             pamt <- baprcp[which(baprcp>=0.01)] #precipitation amount vector
 
-            message(paste0("\n Window width too small on Julian day ", jd,", increasing window to ", wwidth.adapt*2+1, " days"))
-
+            if(awinFlag == T){
+              message(paste0("\n Window width too small on Julian day ", jd,", increasing window to ", wwidth.adapt*2+1, " days"))
+            }
           }
-
-          # if(awinFlag == T & wwidth.adapt != wwidth){
-          #   print(paste0("\n Window width too small on Julian day ", jd,", increased window to ", wwidth.adapt*2+1, " days\n"))
-          # }
 
           logpamt <- log(pamt)                #log-transformed prcp amount vector
           aindex = sample(1:np, 1)               #randomly pick a prcp day
@@ -265,13 +264,11 @@
             pdate <- diw[which(baprcp>=0.01)]   #dates in window where prcp occurred
             pamt <- baprcp[which(baprcp>=0.01)] #precipitation amount vector
 
-            message(paste0("\n Window width too small on Julian day ", jd,", increasing window to ", wwidth.adapt*2+1, " days"))
+            if(awinFlag == T){
+              message(paste0("\n Window width too small on Julian day ", jd,", increasing window to ", wwidth.adapt*2+1, " days"))
+            }
 
           }
-
-          # if(awinFlag == T & wwidth.adapt != wwidth){
-          #   print(paste0("\n Window width too small on Julian day ", jd,", increased window to ", wwidth.adapt*2+1, " days\n"))
-          # }
 
           logpamt <- log(pamt)                #log-transformed prcp amount vector
           aindex = sample(1:np, 1)               #randomly pick a prcp day

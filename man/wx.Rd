@@ -16,7 +16,8 @@ wx(
   ekflag,
   awinFlag,
   tempPerturb,
-  parallelize = NULL
+  pcpOccFlag = FALSE,
+  numbCores = NULL
 )
 }
 \arguments{
@@ -52,7 +53,10 @@ it will be iteratively increased until two or more precipitation values are foun
 \item{tempPerturb}{Set to T or TRUE if you would like to add random noise to the
 temperature simulations based on a normal distribution fit on the training data.}
 
-\item{parallelize}{Enable parallel computing for precipitation simulation, set T or TRUE to enable. By default, this is turned off.}
+\item{pcpOccFlag}{Set to TRUE to use precipitation occurrence as a variable in the temperature simulation model or set to FALSE to omit precipitation occurrence as a variable.
+Simulated daily temperature uses concurrent daily precipitation occurence as a variable if enabled. By default, this is turned off.}
+
+\item{numbCores}{Enable parallel computing for precipitation simulation, set number of cores to enable (must be a positive integer greater than or equal to 2). Turned off by default; if set to 0 or 1 it will run as single thread. Use function 'detectCores()' from 'parallel' package to show the number of available cores on your machine.}
 }
 \value{
 Returns a list containing both inputs to the weather generator as well as outputs.
@@ -106,7 +110,8 @@ head(LowerSantaCruzRiverBasinAZ)
 wx(trainingData = LowerSantaCruzRiverBasinAZ,
  eyr = 1990, nsim = 3, nrealz = 3, aseed = 23,
   wwidth = 3, unitSystem = "U.S. Customary",
-   ekflag = TRUE, awinFlag = TRUE, tempPerturb = TRUE, parallelize = FALSE)
+   ekflag = TRUE, awinFlag = TRUE, tempPerturb = TRUE,
+    pcpOccFlag = FALSE, numbCores = NULL)
 
 }
 

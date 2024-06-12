@@ -20,7 +20,7 @@
 #' @noRd
 #'
 
-"simTPocc" <- function(aseed, dat.d, nsim, nrealz, coeftmp, tmp.sd, tpm.y2, tpm.y, tempPerturb){
+"simTPocc" <- function(aseed, dat.d, nsim, nrealz, coeftmp, tmp.sd, tpm.y2, tpm.y, tempPerturb, pcpOccFlag){
   #simulate precipitation occurrence and temperature magnitude
   #
   #initialize arrays
@@ -92,17 +92,31 @@
         pweek[it,isim] = aweek
         ptvec <- tpm.y2[pstate,,aseas,iyr]
         if(is.na(ptvec[1]) == TRUE | is.na(ptvec[2]) == TRUE) ptvec = tpm.y[pstate,,aseas]
-        #temperature
-        if(tempPerturb == T){
+
+        #temperature simulation using linear model coefficients
+        if(tempPerturb == T & pcpOccFlag == T){
           temp[it,isim] = sum(coeftmp*c(1,temp[(it-1),isim], dframe$ct[it],
                                        dframe$st[it], prcpocc[it,isim],
                                        dframe$tavgm[it]
                                        )
-                          ) + rnorm(n=1,mean=0,sd=tmp.sd[jdaymth[it]])
-        } else{
+                              ) + rnorm(n=1,mean=0,sd=tmp.sd[jdaymth[it]])
+        } else if(tempPerturb == F & pcpOccFlag == T){
           temp[it,isim] = sum(coeftmp*c(1,temp[(it-1),isim], dframe$ct[it],
                                         dframe$st[it], prcpocc[it,isim],
-                                        dframe$tavgm[it]))
+                                        dframe$tavgm[it]
+                                        )
+                              )
+        } else if(tempPerturb == T & pcpOccFlag == F){
+          temp[it,isim] = sum(coeftmp*c(1,temp[(it-1),isim], dframe$ct[it],
+                                        dframe$st[it],
+                                        dframe$tavgm[it]
+                                        )
+                              ) + rnorm(n=1,mean=0,sd=tmp.sd[jdaymth[it]])
+        } else if(tempPerturb == F & pcpOccFlag == F){
+          temp[it,isim] = sum(coeftmp*c(1,temp[(it-1),isim], dframe$ct[it],
+                                        dframe$st[it],
+                                        dframe$tavgm[it])
+                              )
         }
 
       } #it

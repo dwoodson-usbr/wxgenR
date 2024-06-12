@@ -1,6 +1,6 @@
 ---
 title: "wxgenR - Lower Santa Cruz River Basin, AZ"
-author: "Subhrendu Gangopadhyay, Lindsay Bearup, David Woodson, Andrew Verdin, Eylon Shamir, Eve Halper"
+author: "Subhrendu Gangopadhyay, Lindsay Bearup, Andrew Verdin, Eylon Shamir, Eve Halper, Marketa McGuire, David Woodson"
 date: "`r Sys.Date()`"
 output: rmarkdown::html_vignette
 vignette: >
@@ -58,15 +58,15 @@ For example, to simulate precipitation on day 1 of the simulation (Jan. 1 of yea
 
 In some cases, the `wwidth` will be automatically increased through an adaptive window width if precipitation occurred on a given day but there were less than two daily precipitation values over 0.01 inches during the window for that day. `wwidth` will adaptively increase by 1 until two or more daily precipitation values over 0.01 inches are in each window. Adaptive window width is most likely to occur in regions with high aridity, dry seasons, a small initial value of `wwidth` is used, or if the number of years in the training data is relatively short (e.g., less than 30 years). To display the results of the adaptive window width, set `awinFlag = T`.
 
-Here, our training data spans 1970-01-01 to 1999-12-31, but we don't want to use the full historical record, so we set `syr` and `eyr` to 1970 and 1974, respectively, in the `wx()` function so that the training data is subset between those years. We want a simulation length of 5-years (`nsim`) in order to match the length of the subset training record and 10 traces in our ensemble (`nrealz`) for computational efficiency (although more traces, e.g. 50, are recommended). Sampling for each day of the year will sample from the preceding 3-days, the day of, and the following 3-days (`wwidth`) for a total window size of 7-days.
+Here, our training data spans 1970-01-01 to 1999-12-31, but we don't want to use the full historical record, so we set `syr` and `eyr` to 1970 and 1974, respectively, in the `wx()` function so that the training data is subset between those years. We want a simulation length of 5-years (`nsim`) in order to match the length of the subset training record and 2 traces in our ensemble (`nrealz`) for computational efficiency (although more traces, e.g. 50, are recommended). Sampling for each day of the year will sample from the preceding 3-days, the day of, and the following 3-days (`wwidth`) for a total window size of 7-days.
 
 We may also want to increase the variability of our simulated precipitation by sampling outside the historical envelope with an Epanechnikov Kernel (`ekflag = T`). For more details on the Epanechnikov kernel and its use in a weather generator, see Rajagopalan et al. (1996). Setting `tempPerturb = T` will increase the variability of the simulated temperature by adding random noise from a normal distribution fit using a mean of zero and a standard deviation equal to the monthly standard deviation of simulated temperature residuals. Given that simulated daily temperature at time t is a function of temperature(t-1), cosine(t), sine(t), precipitation occurrence(t), and monthly mean temperature(t), the standard deviation of daily residuals from this model is calculated for each month and used to add random noise to the simulated temperature. The temperature simulation approach is inspired by- and adapted from- Verdin et al. (2015, 2018).
 
-Since the training data has units of inches and degrees Fahrenheit for precipitation and temperature, respectively, we must set `unitSystem = "U.S. Customary"`. Setting `parallelize = T` will enable parallel computing for precipitation simulation which is the most computationally intensive aspect of the weather generator.
+Since the training data has units of inches and degrees Fahrenheit for precipitation and temperature, respectively, we must set `unitSystem = "U.S. Customary"`. Setting `numbCores` to 2 or greater will enable parallel computing for precipitation simulation which is the most computationally intensive aspect of the weather generator.
 
 ```{r, results = 'hide'}
 nsim = 5   #number of simulation years
-nrealz = 10 #number of traces in ensemble
+nrealz = 2 #number of traces in ensemble
 
 startTime <- Sys.time() #benchmark run time
 
@@ -74,7 +74,8 @@ z = wx(trainingData = LowerSantaCruzRiverBasinAZ,
        syr = 1970, eyr = 1974,
        nsim = nsim, nrealz = nrealz, aseed = 123,
        wwidth = 3, unitSystem = "U.S. Customary", ekflag = TRUE,
-       awinFlag = TRUE, tempPerturb = TRUE, parallelize = FALSE)
+       awinFlag = FALSE, tempPerturb = TRUE, pcpOccFlag = FALSE,
+       numbCores = 2)
 
 endTime = Sys.time()
 
@@ -1037,7 +1038,7 @@ Save your simulated weather ensemble to a file via the `writeSim` function. It w
 
 ### Performance Benchmarking
 
-Running the `wx()` weather generator code for a 5-year, 10-trace simulation on a laptop with the following characteristics results in the below run time. Parallel computing was enabled via `parallelize = T` in the wx() function.
+Running the `wx()` weather generator code for a 5-year, 10-trace simulation on a laptop with the following characteristics results in the below run time. Parallel computing was enabled via `numbCores = 11` in the wx() function.
 OS: Microsoft Windows 10 Enterprise 10.0.19044 Build 19044
 Hardware: Intel(R) Core(TM) i7-10850H CPU @2.70GHz, 2712 Mhz, 6 Cores, 12 Logical Processors. 16 GB installed physical memory.
 ```{r}
@@ -1058,7 +1059,7 @@ Hardware: Intel(R) Core(TM) i7-10850H CPU @2.70GHz, 2712 Mhz, 6 Cores, 12 Logica
 
 For more details and examples, including analysis of the dataset used in this vignette, see the following works:
 
-    Bearup, L., Gangopadhyay, S., & Mikkelson, K. (2021). Hydroclimate Analysis Lower Santa Cruz River Basin Study (Technical Memorandum No ENV-2020-056). Bureau of Reclamation. <https://www.usbr.gov/lc/phoenix/programs/lscrbasin/LSCRBS_Hydroclimate_2021.pdf>.
+    Bearup, L., Gangopadhyay, S., & Mikkelson, K. (2021). Hydroclimate Analysis Lower Santa Cruz River Basin Study (Technical Memorandum No ENV-2020-056). Bureau of Reclamation. <https://www.usbr.gov/lc/phoenix/programs/lscrbasin/LSCRBStudy.html>.
     
     Gangopadhyay, S., Bearup, L. A., Verdin, A., Pruitt, T., Halper, E., & Shamir, E. (2019). A collaborative stochastic weather generator for climate impacts assessment in the Lower Santa Cruz River Basin, Arizona. Fall Meeting 2019, American Geophysical Union. <https://ui.adsabs.harvard.edu/abs/2019AGUFMGC41G1267G>.
 

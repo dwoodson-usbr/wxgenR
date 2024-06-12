@@ -8,7 +8,7 @@
 A data frame
 }
 \source{
-\href{https://www.usbr.gov/lc/phoenix/programs/lscrbasin/LSCRBS_Hydroclimate_2021.pdf}{Hydroclimate Analysis - Lower Santa Cruz River Basin Study}
+Hydroclimate Analysis - Lower Santa Cruz River Basin Study
 }
 \usage{
 data(LowerSantaCruzRiverBasinAZ)

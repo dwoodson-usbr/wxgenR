@@ -1,0 +1,1444 @@
+## ----setup, include = FALSE---------------------------------------------------
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+
+## -----------------------------------------------------------------------------
+library(wxgenR)
+library(tidyr)
+library(reshape2)
+library(ggpubr)
+library(lubridate)
+library(dplyr)
+# library(data.table)
+library(moments)
+library(seas)
+library(padr)
+library(hydroGOF)
+library(SpecsVerification)
+# library(sm)
+library(ggridges)
+
+
+## ---- eval = FALSE------------------------------------------------------------
+#  # path = ".../path to GHCN station data/"
+#  # files = list.files(path, full.names = T)
+#  
+#  # n = length(files)
+#  #
+#  # fileList = vector("list", n)
+#  #
+#  # i = 1
+#  # for(i in 1:n){
+#  #
+#  #   fi = read.csv(files[i])
+#  #
+#  #   staNum = fi$STATION[1]
+#  #   staNam = fi$NAME[1]
+#  #
+#  #   fi.p = fi %>%
+#  #   dplyr::select(DATE, PRCP, TMAX, TMIN) %>%
+#  #   mutate(DATE = ymd(DATE)) %>%
+#  #   pad(interval = "day") %>%
+#  #   mutate(year = year(DATE), month = month(DATE), day = day(DATE),
+#  #          prcp = PRCP, temp = (TMAX + TMIN)/2, season = month) %>%
+#  #   mutate(daymonth = strftime(DATE, format="%m-%d")) %>%
+#  #   transform(t.clim = ave(temp, daymonth, FUN=function(x) mean(x, na.rm=TRUE))) %>%
+#  #   transform(temp = ifelse(is.na(temp),t.clim,temp)) %>%
+#  #   dplyr::select(year, month, day, prcp, temp, season)
+#  #
+#  #   if(fi.p$month[1] != 1 | fi.p$day[1] != 1){
+#  #     fi.p = subset(fi.p, year > fi.p$year[1])
+#  #   }
+#  #
+#  #   if(tail(fi.p$month, 1) != 12 | tail(fi.p$day, 1) != 31){
+#  #     fi.p = subset(fi.p, year < tail(fi.p$year, 1))
+#  #   }
+#  #
+#  #   out = list(staNum, staNam, fi.p)
+#  #   names(out) = c("Station ID", "Station Name", "Data")
+#  #
+#  #   fileList[[i]] = out
+#  #
+#  # }
+
+## -----------------------------------------------------------------------------
+data(stationData)
+
+glimpse(stationData)
+
+## -----------------------------------------------------------------------------
+fileList = stationData
+n = length(stationData)
+
+## ---- results = 'hide'--------------------------------------------------------
+
+datList = vector("list", n)
+
+nsim = 23   #number of simulation years
+nrealz = 2 #number of traces in ensemble
+  
+run = T
+
+if(run == T){
+
+  i = 1
+  for(i in 1:n){
+    
+    cat(paste0("Starting: ", fileList[[i]][[2]], "\n"))
+    
+    dat.i = fileList[[i]][[3]]
+    
+    trnDat = subset(dat.i, year >= 2000)
+       
+    verDat = subset(dat.i, year >= 2000)
+    
+    z = wx(trainingData = trnDat,
+           nsim = nsim, nrealz = nrealz, aseed = 20190409,
+           wwidth = 3, unitSystem = "U.S. Customary", ekflag = T,
+           awinFlag = T, tempPerturb = T, numbCores = 2)
+  
+    # out = list(fileList[[i]][[1]], fileList[[i]][[2]], trnYrs, trnDat, verDat, z)
+  
+    out = list(fileList[[i]][[1]], fileList[[i]][[2]], verDat, z)
+    
+    datList[[i]] = out
+    
+  }
+
+}
+
+
+## ---- eval = FALSE------------------------------------------------------------
+#  outTag = "inSample"
+#  
+#  outDir = paste0(".../path to output directory/", outTag)
+#  dir.create(outDir)
+#  
+#  outDirPlots = paste0(".../path to output directory/", outTag, "/plots/")
+#  dir.create(outDirPlots)
+#  
+#  outDirPlotsSta = paste0(".../path to output directory/", outTag, "/plots/stations/")
+#  dir.create(outDirPlotsSta)
+#  
+
+## ---- eval = FALSE------------------------------------------------------------
+#  if(run == T){
+#    saveRDS(datList, paste0(outDir,"/trainingData_and_simResults.Rds"))
+#  }else if(run == F){
+#    datList = readRDS(paste0(outDir,"/trainingData_and_simResults.Rds"))
+#  }
+
+## -----------------------------------------------------------------------------
+
+# z = datList[[1]][[4]]
+# verDat = datList[[1]][[3]]
+
+postProcess = function(z, verDat = NULL){
+
+  #parse variables from wx() output
+  dat.d = z$dat.d
+  simyr1 = z$simyr1
+  X = z$X
+  Xseas = z$Xseas
+  Xpdate = z$Xpdate
+  Xpamt = z$Xpamt
+  Xtemp = z$Xtemp
+  
+  #write simulation output
+  #
+  it1 <- seq(1, length(X[,1]), 366)
+  it2 = it1+366-1
+  
+  #initialize storage
+  sim.pcp = matrix(NA, nrow = nsim*366, ncol = nrealz+3)
+  sim.tmp = matrix(NA, nrow = nsim*366, ncol = nrealz+3)
+  sim.szn = matrix(NA, nrow = nsim*366, ncol = nrealz+3)
+  
+  #loop through realization
+  irealz = 1
+  for (irealz in 1:nrealz){
+    
+    outmat <- vector()
+  
+    #loop through simulation years
+    isim = 1
+    for (isim in 1:nsim){
+      leapflag = FALSE
+      ayr = simyr1[isim, irealz]
+      if (leap_year(ayr)) leapflag = TRUE
+      col1 = rep(isim, 366)        #column 1, simulation year
+      d1 = ayr*10^4+01*10^2+01; d2 = ayr*10^4+12*10^2+31
+      i1 = which(dat.d$date1 == d1)
+      i2 = which(dat.d$date1 == d2)
+      col2 = dat.d$date1[i1:i2]   #column 2, simulation date
+      if (leapflag == FALSE) col2 = c(col2,NA)
+      i1 = it1[isim]
+      i2 = it2[isim]
+      col3 = Xseas[i1:i2, irealz]  #column 3, simulation season
+      col4 = X[i1:i2, irealz]      #column 4, precipitation occurrence
+      col5 = Xpdate[i1:i2, irealz] #column 5, precipation resampling date
+      col6 = Xpamt[i1:i2, irealz]  #column 6, resampled precipitation amount
+      col7 = Xtemp[i1:i2, irealz]  #column7, simulated temperature
+  
+      #create time series of 'simulation day'
+      sim.yr = rep(isim, length(col2))
+      sim.month = month(ymd(col2))
+      sim.day = day(ymd(col2))
+  
+      outmat = rbind(outmat, cbind(sim.yr, sim.month, sim.day, col6, col7, col3))
+    } #isim
+  
+    colnames(outmat) = c("simulation year", "month", "day", "prcp", "temp", "season")
+    
+    if(irealz == 1){
+      sim.pcp[,1:3] = outmat[,1:3]
+      sim.tmp[,1:3] = outmat[,1:3]
+      sim.szn[,1:3] = outmat[,1:3]
+    }
+    
+      sim.pcp[,irealz+3] = outmat[,4]
+      sim.tmp[,irealz+3] = outmat[,5]
+      sim.szn[,irealz+3] = outmat[,6]
+  
+  } #irealz
+  
+  #format
+  sim.pcp = formatting(df = sim.pcp, dat.d)
+  sim.tmp = formatting(df = sim.tmp, dat.d)
+  sim.szn = formatting(df = sim.szn, dat.d)
+    
+  #format training data
+  if(is.null(verDat) == FALSE){
+    
+    verDat$date = ymd(paste(verDat$year, verDat$month, verDat$day, sep = "-"))
+
+    verDat.p = verDat %>%
+      mutate(yday = as.numeric(yday(date)),
+           week = as.numeric(week(date))
+           )
+    
+    #format training data
+    # colnames(dat.d)[11] = "yday"
+    obs.pcp = dplyr::select(verDat.p, year, month, day, week, date, yday, prcp)
+    obs.pcp$prcp = replace_na(obs.pcp$prcp, 0)
+    obs.tmp = dplyr::select(verDat.p, year, month, day, week, date, yday, temp)
+    
+  } else{
+    
+    #format training data
+    colnames(dat.d)[11] = "yday"
+    obs.pcp = dat.d[,c(1:3,8:9,11,4)]
+    obs.tmp = dat.d[,c(1:3,8:9,11,5)]  
+    
+  }
+    
+  out = list(sim.pcp, sim.tmp, sim.szn, obs.pcp, obs.tmp)
+
+  names(out) = c("sim.pcp", "sim.tmp", "sim.szn", "obs.pcp", "obs.tmp")
+  
+  return(out)
+  
+}
+
+
+## -----------------------------------------------------------------------------
+
+# df = sim.pcp
+
+formatting = function(df, dat.d){
+  
+  df = as.data.frame(df)
+  
+  colnames(df) = c("simulation year", "month", "day", paste0("Trace_", 1:nrealz))
+
+  #remove 366 days for non-leap years
+  df = drop_na(df, c(month, day))
+  
+  #assign simulation year to start at the same time as training data
+  df$`simulation year` = df$`simulation year` + dat.d$year[1] - 1    
+  
+  #format date
+  df$Date = ymd(paste(df$`simulation year`, df$month, df$day, sep = "-"))
+  
+  #remove years that aren't leap years
+  # df = drop_na(df, Date)
+  
+  df = df %>%
+    mutate(yday = as.numeric(yday(Date)),
+           week = as.numeric(week(Date))) %>%
+    relocate(c(Date,yday,week), .after = day) %>%
+    reshape2::melt(id = 1:6)
+    
+  return(df)
+}
+
+
+## -----------------------------------------------------------------------------
+
+if(run == T){
+
+  datListProc = vector("list", n)
+  
+  i = 1
+  for(i in 1:n){
+    
+    z = datList[[i]][[4]]
+    
+    verDat = datList[[i]][[3]]
+    
+    z.p = postProcess(z, verDat)
+    
+    z.p.c = list(z.p, datList[[i]][[1]], datList[[i]][[2]])
+    
+    datListProc[[i]] = z.p.c
+    
+  }
+
+}
+
+
+## ---- eval = FALSE------------------------------------------------------------
+#  if(run == T){
+#    saveRDS(datListProc, paste0(outDir,"/simResultsPostProcessed.Rds"))
+#  }else if(run == F){
+#    datListProc = readRDS(paste0(outDir,"/simResultsPostProcessed.Rds"))
+#  }
+
+## -----------------------------------------------------------------------------
+datListProc[[4]][[3]] = "BLACKSBURG NWS, VA US"
+datListProc[[5]][[3]] = "BANGOR INTL AIRPORT, ME US"
+
+## -----------------------------------------------------------------------------
+# i = 1
+# simDat = datListProc[[i]][[1]]$sim.tmp
+# obsDat = datListProc[[i]][[1]]$obs.tmp
+# Tag = "Temp"
+# ID = datListProc[[i]][[2]]
+
+i = 1
+simDat = datListProc[[i]][[1]]$sim.pcp
+obsDat = datListProc[[i]][[1]]$obs.pcp
+Tag = "Precip"
+ID = datListProc[[i]][[2]]
+
+monthlyPlot = function(simDat, obsDat, Tag, ID){
+  
+  if(Tag == "Temp"){
+    
+    simM = simDat %>%
+      drop_na() %>%
+      group_by(variable, month, `simulation year`) %>%
+      summarise(
+        mean = mean(value, na.rm = T),
+        max = max(value, na.rm = T),
+        min = min(value, na.rm = T),
+        sd = sd(value, na.rm = T),
+        skew = skewness(value, na.rm = T)
+        ) %>%
+      ungroup()
+    
+    simMM <- simM %>%
+      group_by(variable, month) %>%
+      summarise(
+        mean=mean(mean),
+        max=mean(max),
+        min=mean(min),
+        sd=sqrt(mean(sd^2)),
+        skew=mean(skew, na.rm=T)
+        ) %>%
+      ungroup()
+    
+    obs <- obsDat %>%
+      drop_na() %>%
+      group_by(month, year) %>%
+      summarise(
+        mean = mean(temp, na.rm = T),
+        max = max(temp, na.rm = T),
+        min = min(temp, na.rm = T),
+        sd = sd(temp, na.rm = T),
+        skew = skewness(temp, na.rm = T),
+        ) %>%
+      ungroup()
+    
+    obsMM <- obs %>%
+      group_by(month) %>%
+      summarise(
+        mean = mean(mean, na.rm = T),
+        max = mean(max, na.rm = T),
+        min = mean(min, na.rm = T),
+        sd = sqrt(mean(sd^2)),
+        skew = mean(skew, na.rm=T)
+        ) %>%
+      mutate(variable = "Observed") %>%
+      relocate(variable) %>%
+      ungroup()
+    
+  # colnames(obsMM)[-1] = paste0("obs_", colnames(obsMM)[-1])
+  
+  }else if(Tag == "Precip"){
+    
+    simM = simDat %>%
+      drop_na() %>%
+      group_by(variable, month, `simulation year`) %>%
+      summarise(
+        sum = sum(value, na.rm = T),
+        max = max(value, na.rm = T),
+        min = min(value, na.rm = T),
+        sd = sd(value, na.rm = T),
+        skew = skewness(value, na.rm = T)
+        ) %>%
+      ungroup()  
+    
+      simMM <- simM %>%
+        group_by(variable, month) %>%
+        summarise(
+          sum=mean(sum),
+          max=mean(max),
+          min=mean(min),
+          sd=sqrt(mean(sd^2)),
+          skew=mean(skew, na.rm = T)
+          ) %>%
+        ungroup()
+      
+      obs <- obsDat %>%
+        drop_na() %>%
+        group_by(month, year) %>%
+        summarise(
+          sum = sum(prcp, na.rm = T),
+          max = max(prcp, na.rm = T),
+          min = min(prcp, na.rm = T),
+          sd = sd(prcp, na.rm = T),
+          skew = skewness(prcp, na.rm = T)
+          ) %>%
+        ungroup()
+    
+      obsMM <- obs %>%
+        group_by(month) %>%
+        summarise(
+          sum = mean(sum, na.rm = T),
+          max = mean(max, na.rm = T),
+          min = mean(min, na.rm = T),
+          sd = sqrt(mean(sd^2)),
+          skew = mean(skew, na.rm = T)
+          ) %>%
+        mutate(variable = "Observed") %>%
+        relocate(variable) %>%
+        ungroup()
+    
+  # colnames(obsMM)[-1] = paste0("obs_", colnames(obsMM)[-1])
+  
+  }
+  
+  densityData = data.frame(simM[,c(2,4)], Tag = "Simulated")
+  densityData = bind_rows(densityData, data.frame(obs[,c(1,3)], Tag = "Observed"))
+  
+  df.comb = rbind(obsMM, simMM)
+  
+  #plotting --------------------------------
+  
+  if(Tag == "Temp"){
+    
+    p1 = ggplot(df.comb) + 
+      geom_boxplot(data = subset(df.comb, variable != "Observed"), aes(x = month, y = mean, group = month)) +
+      geom_line(data = subset(df.comb, variable == "Observed"), aes(x = month, y = mean), color = "blue", size = 0.5) +
+      geom_point(data = subset(df.comb, variable == "Observed"), aes(x = month, y = mean), color = "blue", size = 1.5, show.legend = T) +
+      scale_colour_manual(values = c('blue'='blue'), labels = c('Observed')) +
+      xlab("Month") + ylab("Temperature (°F)") +
+      theme_bw() +
+      theme(axis.title = element_text(face = "bold"),
+            text=element_text(size=12),
+            panel.grid.major = element_line(),
+            legend.title=element_blank(),
+            plot.title = element_text(size=8)
+            ) +
+      scale_x_continuous(breaks = 1:12) +
+      ggtitle(paste0("Average Mean Monthly Temperature \n", ID))
+    
+    #monthly pdf
+    p6 = ggplot(densityData) + 
+        geom_density_ridges(aes(y = as.factor(month), x = mean, fill = Tag, color = Tag), alpha = 0.5) +
+        scale_fill_manual(values = c("blue", "black"), labels = c("Observed", "Simulated")) +
+        scale_color_manual(values = c("blue", "black"), guide = "none") +
+        ylab("Month") + xlab("Temperature (°F)") +
+        theme_bw() +
+        theme(axis.title = element_text(face = "bold"),
+              text=element_text(size=12),
+              panel.grid.major = element_line(),
+              legend.title=element_blank(),
+              plot.title = element_text(size=8)
+              ) +
+        # scale_x_continuous(breaks = 1:12) +
+        ggtitle(paste0("Average Monthly Temperature \n", ID))
+    
+  }else if(Tag == "Precip"){
+    
+     p1 = ggplot(df.comb) + 
+      geom_boxplot(data = subset(df.comb, variable != "Observed"), aes(x = month, y = sum, group = month)) +
+      geom_line(data = subset(df.comb, variable == "Observed"), aes(x = month, y = sum), size = 0.5, color = "blue") +
+      geom_point(data = subset(df.comb, variable == "Observed"), aes(x = month, y = sum), size = 1.5, color = "blue", show.legend = T) +
+      scale_color_manual(values = c('blue'='blue'), labels = c('Observed')) +
+      xlab("Month") + ylab("Precipitation (inches)") +
+      theme_bw() +
+      theme(axis.title = element_text(face = "bold"),
+            text=element_text(size=12),
+            panel.grid.major = element_line(),
+            legend.title=element_blank(),
+            plot.title = element_text(size=8)
+            ) +
+      scale_x_continuous(breaks = 1:12) +
+      ggtitle(paste0("Average Total Monthly Precipitation \n", ID))
+     
+    #monthly pdf
+    p6 = ggplot(densityData) + 
+        geom_density_ridges(aes(y = as.factor(month), x = sum, fill = Tag, color = Tag), alpha = 0.5) +
+        scale_fill_manual(values = c("blue", "black"), labels = c("Observed", "Simulated")) +
+        scale_color_manual(values = c("blue", "black"), guide = "none") +
+        ylab("Month") + xlab("Precipitation (inches)") +
+        theme_bw() +
+        theme(axis.title = element_text(face = "bold"),
+              text=element_text(size=12),
+              panel.grid.major = element_line(),
+              legend.title=element_blank(),
+              plot.title = element_text(size=8)
+              ) +
+        # scale_x_continuous(breaks = 1:12) +
+        ggtitle(paste0("Total Monthly Precipitation\n", ID))
+    
+  }
+
+  if(Tag == "Temp"){
+    yLabel = "Temperature "
+    units = "(°F)"
+  } else if(Tag == "Precip"){
+    yLabel = "Precipitation "
+    units = "(inches)"
+  }
+  
+  #monthly SD
+  p2 = ggplot(df.comb) + 
+      geom_boxplot(data = subset(df.comb, variable != "Observed"), aes(x = month, y = sd, group = month)) +
+      geom_line(data = subset(df.comb, variable == "Observed"), aes(x = month, y = sd), size = 0.5, color = "blue", show.legend = T) +
+      geom_point(data = subset(df.comb, variable == "Observed"), aes(x = month, y = sd), size = 1.5, color = "blue", show.legend = T) +
+      scale_color_manual(values = c('blue'='blue'), labels = c('Observed')) +
+      xlab("Month") + ylab(paste0("Standard Deviation ", units)) +
+      theme_bw() +
+      theme(axis.title = element_text(face = "bold"),
+            text=element_text(size=12),
+            panel.grid.major = element_line(),
+            legend.title=element_blank(),
+            plot.title = element_text(size=8)
+            ) +
+      scale_x_continuous(breaks = 1:12) +
+      ggtitle(paste0("Average Standard Deviation in Monthly ", yLabel, "\n", ID))
+  
+  
+  #monthly Skew
+  p3 = ggplot(df.comb) + 
+      geom_boxplot(data = subset(df.comb, variable != "Observed"), aes(x = month, y = skew, group = month)) +
+      geom_line(data = subset(df.comb, variable == "Observed"), aes(x = month, y = skew), size = 0.5, color = "blue", show.legend = T) +
+      geom_point(data = subset(df.comb, variable == "Observed"), aes(x = month, y = skew), size = 1.5, color = "blue", show.legend = T) +
+      scale_color_manual(values = c('blue'='blue'), labels = c('Observed')) +
+      xlab("Month") + ylab("Skew (-)") +
+      theme_bw() +
+      theme(axis.title = element_text(face = "bold"),
+            text=element_text(size=12),
+            panel.grid.major = element_line(),
+            legend.title=element_blank(),
+            plot.title = element_text(size=8)
+            ) +
+      scale_x_continuous(breaks = 1:12) +
+      ggtitle(paste0("Average Skew in Monthly ", yLabel, "\n", ID))
+  
+  #monthly max
+  p4 = ggplot(df.comb) + 
+      geom_boxplot(data = subset(df.comb, variable != "Observed"), aes(x = month, y = max, group = month)) +
+       geom_line(data = subset(df.comb, variable == "Observed"), aes(x = month, y = max), size = 0.5, color = "blue", show.legend = T) +
+      geom_point(data = subset(df.comb, variable == "Observed"), aes(x = month, y = max), size = 1.5, color = "blue", show.legend = T) +
+      scale_color_manual(values = c('blue'='blue'), labels = c('Observed')) +
+      xlab("Month") + ylab(paste0("Maximum ", units)) +
+      theme_bw() +
+      theme(axis.title = element_text(face = "bold"),
+            text=element_text(size=12),
+            panel.grid.major = element_line(),
+            legend.title=element_blank(),
+            plot.title = element_text(size=8)
+            ) +
+      scale_x_continuous(breaks = 1:12) +
+      ggtitle(paste0("Average Monthly Maximum ", yLabel, "\n", ID))
+  
+  #monthly min
+  p5 = ggplot(df.comb) + 
+      geom_boxplot(data = subset(df.comb, variable != "Observed"), aes(x = month, y = min, group = month)) +
+       geom_line(data = subset(df.comb, variable == "Observed"), aes(x = month, y = min), size = 0.5, color = "blue", show.legend = T) +
+      geom_point(data = subset(df.comb, variable == "Observed"), aes(x = month, y = min), size = 1.5, color = "blue", show.legend = T) +
+      scale_color_manual(values = c('blue'='blue'), labels = c('Observed')) +
+      xlab("Month") + ylab(paste0("Minimum ", units)) +
+      theme_bw() +
+      theme(axis.title = element_text(face = "bold"),
+            text=element_text(size=12),
+            panel.grid.major = element_line(),
+            legend.title=element_blank(),
+            plot.title = element_text(size=8)
+            ) +
+      scale_x_continuous(breaks = 1:12) +
+      ggtitle(paste0("Average Monthly Minimum ", yLabel, "\n", ID))
+  
+  if(Tag == "Temp"){
+    p.comb = ggarrange(p1, p2, p5, p4, nrow = 2, ncol = 2, common.legend = TRUE, legend = "right")
+  }else if(Tag == "Precip"){
+    p.comb = ggarrange(p1, p2, p3, p4, nrow = 2, ncol = 2, common.legend = TRUE, legend = "right")
+  }  
+  
+  print(p.comb)
+  
+  #don't save plot to file
+  # p.out = paste0(outDirPlotsSta, "/monthlyStats_", Tag, "_", ID, ".png")
+  # ggsave(filename = p.out, plot = p.comb, device = "png", height = 8, width = 8, units = "in")
+
+  
+  #skew and pdf case study
+  if(Tag == "Temp"){
+    p.comb = ggarrange(p3, p6, nrow = 1, ncol = 2, common.legend = TRUE, legend = "right")
+    print(p.comb)
+  
+    # p.out = paste0(outDirPlotsSta, "/monthly_skewAndPDF_", Tag, "_", ID, ".png")
+    # ggsave(filename = p.out, plot = p.comb, device = "png", height = 4, width = 8, units = "in")
+  }  
+  
+ 
+
+  
+  df.comb.o = df.comb %>%
+    mutate(ID = ID, Tag = Tag)
+  
+  return(df.comb.o)
+  
+}
+
+
+## ---- fig.width=8, fig.height=8-----------------------------------------------
+
+df.monthly.pcp = NULL
+
+for(i in 1:n){
+  
+  simDat = datListProc[[i]][[1]]$sim.pcp
+  obsDat = datListProc[[i]][[1]]$obs.pcp
+  Tag = "Precip"
+  ID = datListProc[[i]][[3]]
+  df.i = monthlyPlot(simDat, obsDat, Tag, ID)
+  
+  df.monthly.pcp = rbind(df.monthly.pcp, df.i)
+  
+}
+
+
+## ---- fig.width=8, fig.height=8-----------------------------------------------
+
+df.monthly.tmp = NULL
+
+for(i in 1:n){
+  
+  simDat = datListProc[[i]][[1]]$sim.tmp
+  obsDat = datListProc[[i]][[1]]$obs.tmp
+  Tag = "Temp"
+  ID = datListProc[[i]][[3]]
+  df.i = monthlyPlot(simDat, obsDat, Tag, ID)
+  
+  df.monthly.tmp = rbind(df.monthly.tmp, df.i)
+
+}
+
+
+## ---- fig.width=10, fig.height=10---------------------------------------------
+#plotting - facet plot
+
+  p1 = ggplot(df.monthly.tmp) + 
+    geom_boxplot(data = subset(df.monthly.tmp, variable != "Observed"), aes(x = month, y = mean, group = month)) +
+    geom_line(data = subset(df.monthly.tmp, variable == "Observed"), aes(x = month, y = mean), size = 0.5, color = "blue", show.legend = T) +
+    geom_point(data = subset(df.monthly.tmp, variable == "Observed"), aes(x = month, y = mean), size = 1.5, color = "blue", show.legend = T) +
+      scale_color_manual(values = c('blue'='blue'), labels = c('Observed')) +
+    xlab("Month") + ylab("Temperature (°F)") +
+    theme_bw() +
+    theme(axis.title = element_text(face = "bold"),
+          text=element_text(size=12),
+          panel.grid.major = element_line(),
+          legend.title=element_blank(),
+          plot.title = element_text(size=10),
+          strip.text.x = element_text(size = 8)
+          ) +
+    scale_x_continuous(breaks = 1:12) +
+    ggtitle(paste0("Average Mean Monthly Temperature ")) +
+    facet_wrap(~ID, scales = "free")
+
+print(p1)
+
+# p.out = paste0(outDirPlots, "/monthlyStats_faceted_temperature.png")
+# ggsave(filename = p.out, plot = p1, device = "png", height = 8, width = 8, units = "in")
+
+
+## ---- fig.width=10, fig.height=10---------------------------------------------
+
+p1 = ggplot(df.monthly.pcp) + 
+    geom_boxplot(data = subset(df.monthly.pcp, variable != "Observed"), aes(x = month, y = sum, group = month)) +
+    geom_line(data = subset(df.monthly.pcp, variable == "Observed"), aes(x = month, y = sum), size = 0.5, color = "blue", show.legend = T) +
+    geom_point(data = subset(df.monthly.pcp, variable == "Observed"), aes(x = month, y = sum), size = 1.5, color = "blue", show.legend = T) +
+    scale_color_manual(values = c('blue'='blue'), labels = c('Observed')) +  
+    xlab("Month") + ylab("Precipitation (inches)") +
+    theme_bw() +
+    theme(axis.title = element_text(face = "bold"),
+          text=element_text(size=12),
+          panel.grid.major = element_line(),
+          legend.title=element_blank(),
+          plot.title = element_text(size=10),
+          strip.text.x = element_text(size = 8)
+          ) +
+    scale_x_continuous(breaks = 1:12) +
+    ggtitle(paste0("Average Total Monthly Precipitation ")) +
+    facet_wrap(~ID, scales = "free")
+
+print(p1)
+
+# p.out = paste0(outDirPlots, "/monthlyStats_faceted_precipitation.png")
+# ggsave(filename = p.out, plot = p1, device = "png", height = 8, width = 8, units = "in")
+  
+
+## ---- fig.width=10, fig.height=10---------------------------------------------
+i = 1
+simDat = datListProc[[i]][[1]]$sim.pcp
+obsDat = datListProc[[i]][[1]]$obs.pcp
+Tag = "Precip"
+ID = datListProc[[i]][[2]]
+Name = datListProc[[i]][[3]]
+
+dailyPlot = function(simDat, obsDat, Tag, ID, Name){
+  
+  simD = simDat %>%
+    drop_na() %>%
+    group_by(variable, yday) %>%
+    summarise(
+      mean = mean(value, na.rm = T),
+      max = max(value, na.rm = T),
+      min = min(value, na.rm = T),
+      sd = sd(value, na.rm = T),
+      skew = skewness(value, na.rm = T)
+      ) %>%
+    ungroup()
+    
+  simDq <- simD %>%
+    group_by(yday) %>%
+    summarise(
+      mean_q5 = quantile(mean, 0.05, na.rm = T),
+      mean_med = median(mean, na.rm = T),
+      mean_q95 = quantile(mean, 0.95, na.rm =T),
+      max_q5 = quantile(max, 0.05, na.rm = T),
+      max_med = median(max, na.rm = T),
+      max_q95 = quantile(max, 0.95, na.rm = T),
+      min_q5 = quantile(min, 0.05, na.rm = T),
+      min_med = median(min, na.rm = T),
+      min_q95 = quantile(min, 0.95, na.rm = T),
+      sd_q5 = quantile(sd, 0.05, na.rm = T),
+      sd_med = median(sd),
+      sd_q95 = quantile(sd, 0.95, na.rm = T),
+      skew_q5 = quantile(skew, 0.05, na.rm = T),
+      skew_med = median(skew, na.rm = T),
+      skew_q95 = quantile(skew, 0.95, na.rm = T)
+      ) %>%
+      # drop_na() %>%
+    ungroup()
+  
+  if(Tag == "Temp"){
+    obs <- obsDat %>%
+      drop_na() %>%
+      group_by(yday) %>%
+      summarise(
+        mean = mean(temp, na.rm = T),
+        max = max(temp, na.rm = T),
+        min = min(temp, na.rm = T),
+        sd = sd(temp, na.rm = T),
+        skew = skewness(temp, na.rm = T)
+        ) %>%
+      ungroup()
+  } else if(Tag == "Precip"){
+    obs <- obsDat %>%
+      drop_na() %>%
+      group_by(yday) %>%
+      summarise(
+        mean = mean(prcp, na.rm = T),
+        max = max(prcp, na.rm = T),
+        min = min(prcp, na.rm = T),
+        sd = sd(prcp, na.rm = T),
+        skew = skewness(prcp, na.rm = T)
+        ) %>%
+      ungroup()
+    }
+
+  colnames(obs)[-1] = paste0("obs_", colnames(obs)[-1])
+  
+  df.comb = left_join(simDq, obs, by = "yday")
+  
+  #calc performance metrics
+  
+  ensMed.rmse = rmse(sim = simDq$mean_med, obs = obs$obs_mean)
+  # ensMed.nse = NSE(sim = simDq$mean_med, obs = obs$obs_mean)
+  
+  ensMed.cor = cor(x = simDq$mean_med, y = obs$obs_mean, method = "spearman")
+
+  ensDat = as.matrix(pivot_wider(simD, names_from = variable, values_from = mean, id_cols = yday))
+  
+  if(Tag == "Precip") ensRef =  as.matrix(pivot_wider(obsDat, names_from = year, values_from = prcp, id_cols = yday))
+  if(Tag == "Temp") ensRef =  as.matrix(pivot_wider(obsDat, names_from = year, values_from = temp, id_cols = yday))
+
+  crps.Dat = mean(EnsCrps(ens = ensDat[,-1], obs = obs$obs_mean))
+  crps.Ref = mean(EnsCrps(ens = ensRef[,-1], obs = obs$obs_mean))
+
+  crpss = 1 - crps.Dat/crps.Ref
+
+  perfMetrics = data.frame(ID = ID, Name = Name, EnsMedRMSE = ensMed.rmse, CRPSS = crpss, EnsMedCor = ensMed.cor, Tag = Tag)
+  
+  #plotting --------------------------------
+  lgdLoc = c(0.8, 0.9)
+  
+  if(Tag == "Temp"){
+    yLabel = "Daily Temperature "
+    units = "(°F)"
+  } else if(Tag == "Precip"){
+    yLabel = "Daily Precipitation "
+    units = "(inches)"
+  }
+  
+  trnAlpha = 0.65
+  
+  #daily mean
+  p1 = ggplot(df.comb) +
+  geom_ribbon(aes(x = yday, ymin = mean_q5, ymax = mean_q95), alpha = 0.25) +
+  geom_line(aes(x = yday, y = mean_med, color = "red"), size = 1, alpha = 0.8) +
+  # geom_line(aes(x = yday, y = obs_mean), size = 0.3, alpha = trnAlpha, linetype = "solid", color = "blue") +
+  geom_point(aes(x = yday, y = obs_mean), size = 0.6, alpha = trnAlpha, color = "blue") +
+  scale_colour_manual(values =c('blue'='blue','red'='red', 'grey' = 'grey'), labels = c('Observed','Simulation Median', '95% Confidence')) +
+  theme_bw() +
+  theme(axis.title = element_text(face = "bold"),
+        text=element_text(size=14),
+        panel.grid.major = element_line(),
+        legend.title=element_blank(),
+        legend.position = lgdLoc,
+        legend.background = element_blank(),
+        legend.box.background = element_blank(),
+        legend.key = element_blank()) +
+  xlab("Day of Year") + ylab(paste0("Mean ", yLabel, units))   
+  
+  #daily SD
+  p2 = ggplot(df.comb) +
+  geom_ribbon(aes(x = yday, ymin = sd_q5, ymax = sd_q95), alpha = 0.25) +
+  geom_line(aes(x = yday, y = sd_med, color = "red"), size = 1, alpha = 0.8) +
+  # geom_line(aes(x = yday, y = obs_sd), size = 0.3, alpha = trnAlpha, linetype = "solid", color = "blue") +
+  geom_point(aes(x = yday, y = obs_sd), size = 0.6, alpha = trnAlpha, color = "blue") +
+  scale_colour_manual(values =c('blue'='blue','red'='red', 'grey' = 'grey'), labels = c('Observed','Simulation Median', '95% Confidence')) +
+  theme_bw() +
+  theme(axis.title = element_text(face = "bold"),
+        text=element_text(size=14),
+        panel.grid.major = element_line(),
+        legend.title=element_blank(),
+        legend.position = lgdLoc,
+        legend.background = element_blank(),
+        legend.box.background = element_blank(),
+        legend.key = element_blank()) +
+  xlab("Day of Year") + ylab(paste0("Std. Deviation of ", yLabel, units))   
+  
+  #daily skew
+  p3 = ggplot(df.comb) +
+  geom_ribbon(aes(x = yday, ymin = skew_q5, ymax = skew_q95), alpha = 0.25) +
+  geom_line(aes(x = yday, y = skew_med, color = "red"), size = 1, alpha = 0.8) +
+  # geom_line(aes(x = yday, y = obs_skew), size = 0.3, alpha = trnAlpha, linetype = "solid", color = "blue") +
+  geom_point(aes(x = yday, y = obs_skew), size = 0.6, alpha = trnAlpha, color = "blue") +
+  scale_colour_manual(values =c('blue'='blue','red'='red', 'grey' = 'grey'), labels = c('Observed','Simulation Median', '95% Confidence')) +
+  theme_bw() +
+  theme(axis.title = element_text(face = "bold"),
+        text=element_text(size=14),
+        panel.grid.major = element_line(),
+        legend.title=element_blank(),
+        legend.position = lgdLoc,
+        legend.background = element_blank(),
+        legend.box.background = element_blank(),
+        legend.key = element_blank()) +
+  xlab("Day of Year") + ylab(paste0("Skew of ", yLabel, " (-)"))  
+    
+  
+  #daily Max
+  p4 = ggplot(df.comb) +
+  geom_ribbon(aes(x = yday, ymin = max_q5, ymax = max_q95), alpha = 0.25) +
+  geom_line(aes(x = yday, y = max_med, color = "red"), size = 1, alpha = 0.8) +
+  # geom_line(aes(x = yday, y = obs_max), size = 0.3, alpha = trnAlpha, linetype = "solid", color = "blue") +
+  geom_point(aes(x = yday, y = obs_max), size = 0.6, alpha = trnAlpha, color = "blue") +
+  scale_colour_manual(values =c('blue'='blue','red'='red', 'grey' = 'grey'), labels = c('Observed','Simulation Median', '95% Confidence')) +
+  theme_bw() +
+  theme(axis.title = element_text(face = "bold"),
+        text=element_text(size=14),
+        panel.grid.major = element_line(),
+        legend.title=element_blank(),
+        legend.position = lgdLoc,
+        legend.background = element_blank(),
+        legend.box.background = element_blank(),
+        legend.key = element_blank()) +
+  xlab("Day of Year") + ylab(paste0("Maximum ", yLabel, units))  
+  
+  #daily Min
+  p5 = ggplot(df.comb) +
+  geom_ribbon(aes(x = yday, ymin = min_q5, ymax = min_q95), alpha = 0.25) +
+  geom_line(aes(x = yday, y = min_med, color = "red"), size = 1, alpha = 0.8) +
+  # geom_line(aes(x = yday, y = obs_max), size = 0.3, alpha = trnAlpha, linetype = "solid", color = "blue") +
+  geom_point(aes(x = yday, y = obs_min), size = 0.6, alpha = trnAlpha, color = "blue") +
+  scale_colour_manual(values =c('blue'='blue','red'='red', 'grey' = 'grey'), labels = c('Observed','Simulation Median', '95% Confidence')) +
+  theme_bw() +
+  theme(axis.title = element_text(face = "bold"),
+        text=element_text(size=14),
+        panel.grid.major = element_line(),
+        legend.title=element_blank(),
+        legend.position = lgdLoc,
+        legend.background = element_blank(),
+        legend.box.background = element_blank(),
+        legend.key = element_blank()) +
+  xlab("Day of Year") + ylab(paste0("Minimum ", yLabel, units))  
+  
+  if(Tag == "Temp"){
+    p.comb = ggarrange(p1, p2, p5, p4, nrow = 2, ncol = 2, common.legend = TRUE, legend = "top")
+  }else if(Tag == "Precip"){
+    p.comb = ggarrange(p1, p2, p3, p4, nrow = 2, ncol = 2, common.legend = TRUE, legend = "top")
+  }
+  
+  p.comb = annotate_figure(p.comb, top = text_grob(paste(ID, Name, sep = " - ")))
+  
+  print(p.comb)
+  
+  # p.out = paste0(outDirPlotsSta, "/dailyStats_", Tag, "_", Name, ".png")
+  # ggsave(filename = p.out, plot = p.comb, device = "png")
+  
+  df.comb.o = df.comb %>%
+    mutate(ID = ID, Name = Name, Tag = Tag)
+  
+  return(list(df.comb.o, perfMetrics))
+
+}
+
+
+## ---- fig.width=10, fig.height=10---------------------------------------------
+df.daily.pcp = NULL
+df.daily.pcp.perf = NULL
+
+for(i in 1:n){
+  
+  simDat = datListProc[[i]][[1]]$sim.pcp
+  obsDat = datListProc[[i]][[1]]$obs.pcp
+  Tag = "Precip"
+  ID = datListProc[[i]][[2]]
+  Name = datListProc[[i]][[3]]
+  
+  df.i = dailyPlot(simDat, obsDat, Tag, ID, Name)
+  
+  df.daily.pcp = rbind(df.daily.pcp, df.i[[1]])
+  df.daily.pcp.perf = rbind(df.daily.pcp.perf, df.i[[2]])
+
+}
+
+## ---- fig.width=8, fig.height=8-----------------------------------------------
+# lgdLoc = c(0.8, 0.9)
+  
+if(Tag == "Temp"){
+  yLabel = "Daily Temperature "
+  units = "(°F)"
+} else if(Tag == "Precip"){
+  yLabel = "Daily Precipitation "
+  units = "(inches)"
+}
+
+trnAlpha = 0.5
+
+#daily mean
+p1 = ggplot(df.daily.pcp) +
+  geom_ribbon(aes(x = yday, ymin = mean_q5, ymax = mean_q95), alpha = 0.25) +
+  geom_line(aes(x = yday, y = mean_med, color = "red"), size = 1, alpha = 0.8) +
+  # geom_line(aes(x = yday, y = obs_mean), size = 0.15, alpha = trnAlpha-0.15, linetype = "solid", color = "blue") +
+  geom_point(aes(x = yday, y = obs_mean), size = 0.3, alpha = trnAlpha, color = "blue") +
+  scale_colour_manual(values =c('blue'='blue','red'='red', 'grey' = 'grey'), labels = c('Observed','Simulation Median', '95% Confidence')) +
+  theme_bw() +
+  theme(axis.title = element_text(face = "bold"),
+        # text=element_text(size=14),
+        panel.grid.major = element_line(),
+        legend.title=element_blank(),
+        legend.position = "top",
+        legend.background = element_blank(),
+        legend.box.background = element_blank(),
+        legend.key = element_blank()) +
+  xlab("Day of Year") + ylab(paste0("Mean ", yLabel, units)) +
+  facet_wrap(~Name, scales = "free")
+
+print(p1)
+
+# p.out = paste0(outDirPlots, "/dailyStats_faceted_precipitation.png")
+# ggsave(filename = p.out, plot = p1, device = "png", height = 8, width = 8, units = "in")
+
+
+## ---- fig.width=8, fig.height=8-----------------------------------------------
+
+df.daily.tmp = NULL
+df.daily.tmp.perf = NULL
+
+for(i in 1:n){
+  
+  simDat = datListProc[[i]][[1]]$sim.tmp
+  obsDat = datListProc[[i]][[1]]$obs.tmp
+  Tag = "Temp"
+  ID = datListProc[[i]][[2]]
+  Name = datListProc[[i]][[3]]
+
+  df.i = dailyPlot(simDat, obsDat, Tag, ID, Name)
+  
+  df.daily.tmp = rbind(df.daily.tmp, df.i[[1]])
+  df.daily.tmp.perf = rbind(df.daily.tmp.perf, df.i[[2]])
+
+}
+
+
+## ---- fig.width=8, fig.height=8-----------------------------------------------
+# lgdLoc = c(0.8, 0.9)
+  
+if(Tag == "Temp"){
+  yLabel = "Daily Temperature "
+  units = "(°F)"
+} else if(Tag == "Precip"){
+  yLabel = "Daily Precipitation "
+  units = "(inches)"
+}
+
+trnAlpha = 0.5
+
+#daily mean
+p1 = ggplot(df.daily.tmp) +
+  geom_ribbon(aes(x = yday, ymin = mean_q5, ymax = mean_q95), alpha = 0.25) +
+  geom_line(aes(x = yday, y = mean_med, color = "red"), size = 1, alpha = 0.8) +
+  # geom_line(aes(x = yday, y = obs_mean), size = 0.15, alpha = trnAlpha-0.15, linetype = "solid", color = "blue") +
+  geom_point(aes(x = yday, y = obs_mean), size = 0.3, alpha = trnAlpha, color = "blue") +
+  scale_colour_manual(values =c('blue'='blue','red'='red', 'grey' = 'grey'), labels = c('Observed','Simulation Median', '95% Confidence')) +
+  theme_bw() +
+  theme(axis.title = element_text(face = "bold"),
+        # text=element_text(size=14),
+        panel.grid.major = element_line(),
+        legend.title=element_blank(),
+        legend.position = "top",
+        legend.background = element_blank(),
+        legend.box.background = element_blank(),
+        legend.key = element_blank()) +
+  xlab("Day of Year") + ylab(paste0("Mean ", yLabel, units)) +
+  facet_wrap(~Name, scales = "free")
+
+print(p1)
+
+# p.out = paste0(outDirPlots, "/dailyStats_faceted_temperature.png")
+# ggsave(filename = p.out, plot = p1, device = "png", height = 8, width = 8, units = "in")
+
+
+## -----------------------------------------------------------------------------
+perfComb = rbind(df.daily.pcp.perf, df.daily.tmp.perf)
+
+# write.csv(perfComb, paste0(outDir, "/stations_dailyPerfMetrics.csv"), row.names = F)
+
+## -----------------------------------------------------------------------------
+i = 1
+x = subset(datListProc[[i]][[1]]$sim.pcp, variable == "Trace_1")$value
+month = subset(datListProc[[i]][[1]]$sim.pcp, variable == "Trace_1")$month
+
+spells = function(x, month){  
+    
+  df = data.frame(x, month)
+  df$Flag = NA  
+  n = nrow(df)  
+    
+  #flags (1 = day i pcp is below threshold (0.01 inch), 0 = above threshold)  
+  i = 1  
+  for(i in 1:n){  
+  
+    if(df$x[i] < 0.01){  
+    df$Flag[i] = 1  
+    } else{  
+    df$Flag[i] = 0  
+    }  
+      
+  }  
+    
+  #spell durations ------------
+  
+  #add dummy 0 at end of data  
+  df[nrow(df)+1,] = NA  
+  df$x[nrow(df)] = 0
+  df$Flag[nrow(df)] = 0
+  # tail(df$value, 1) = 0
+    
+  #dry spells -----
+  duration.dry = c()  
+  # s.m = c()
+  e.m.dry = c()
+  
+  d.i = 0  
+
+  i = 1  
+  for(i in 1:n){  
+      
+    #if year i and year i + 1 flows are both below threshold, increment duration for spell  
+    if(df$Flag[i] == 1 & df$Flag[i+1] == 1){    
+      
+    d.i = d.i + 1  
+
+    #if year i is below threshold, but year i + 1 is not, that is the end of the dry spell, finish incrementing and save values, then reset for calculation of the next spell's stats  
+    } else if(df$Flag[i] == 1 & df$Flag[i+1] == 0){  
+      
+    d.i = d.i + 1  
+
+    e.m.dry = c(e.m.dry, df$month[i])
+    duration.dry = c(duration.dry, d.i)  
+
+    d.i = 0  
+
+    }   
+  
+  }  
+    
+  out.dry = data.frame(duration = duration.dry, month = e.m.dry)
+  
+  #wet spells -----
+  duration.wet = c()  
+  # s.m = c()
+  e.m.wet = c()
+  
+  w.i = 0  
+
+  i = 1  
+  for(i in 1:n){  
+      
+    #if year i and year i + 1 flows are both above threshold, increment duration for spell
+    if(df$Flag[i] == 0 & df$Flag[i+1] == 0){    
+      
+    w.i = w.i + 1  
+
+    #if year i is above threshold, but year i + 1 is not, that is the end of the wet spell, finish incrementing and save values, then reset for calculation of the next spell's stats  
+    } else if(df$Flag[i] == 0 & df$Flag[i+1] == 1){  
+      
+    w.i = w.i + 1  
+
+    e.m.wet = c(e.m.wet, df$month[i])
+    duration.wet = c(duration.wet, w.i)  
+
+    w.i = 0  
+
+    }   
+  
+  }  
+  
+  out.wet = data.frame(duration = duration.wet, month = e.m.wet)
+  
+  return(list(dry = out.dry, wet = out.wet))  
+}
+
+## -----------------------------------------------------------------------------
+
+df.daily.spells = NULL
+
+i = 1
+for(i in 1:n){
+  
+  simDat = datListProc[[i]][[1]]$sim.pcp
+  obsDat = datListProc[[i]][[1]]$obs.pcp
+  ID = datListProc[[i]][[2]]
+  Name = datListProc[[i]][[3]]
+
+  j = 1
+  for(j in 1:nrealz){
+    
+    trace.j = paste0("Trace_", j)
+    
+    df.j = subset(simDat, variable == trace.j)
+    
+    spells.j = spells(x = df.j$value, month = df.j$month)
+    
+    df.spells.dry = spells.j$dry %>% 
+      group_by(month) %>%
+      summarise(mean = mean(duration, na.rm = T),
+                sd = sd(duration, na.rm = T),
+                max = max(duration, na.rm = T)
+                ) %>%
+      mutate(Tag = "Dry Spells", ID = ID, Name = Name, Type = "Simulated", Trace = trace.j)
+    
+    df.spells.wet = spells.j$wet %>% 
+      group_by(month) %>%
+      summarise(mean = mean(duration, na.rm = T),
+                sd = sd(duration, na.rm = T),
+                max = max(duration, na.rm = T)
+                ) %>%
+      mutate(Tag = "Wet Spells", ID = ID, Name = Name, Type = "Simulated", Trace = trace.j)
+    
+    df.daily.spells = rbind(df.daily.spells, df.spells.dry, df.spells.wet)
+    
+  }
+  
+  spells.o = spells(x = obsDat$prcp, month = obsDat$month)
+
+  df.spells.dry.o = spells.o$dry %>% 
+    subset(duration <= 365) %>%
+    group_by(month) %>%
+    summarise(mean = mean(duration, na.rm = T),
+              sd = sd(duration, na.rm = T),
+              max = max(duration, na.rm = T)
+              ) %>%
+    mutate(Tag = "Dry Spells", ID = ID, Name = Name, Type = "Observed", Trace = "Observed")
+
+  df.spells.wet.o = spells.o$wet %>% 
+    subset(duration <= 365) %>%
+    group_by(month) %>%
+    summarise(mean = mean(duration, na.rm = T),
+              sd = sd(duration, na.rm = T),
+              max = max(duration, na.rm = T)
+              ) %>%
+    mutate(Tag = "Wet Spells", ID = ID, Name = Name, Type = "Observed", Trace = "Observed")
+
+  df.daily.spells = rbind(df.daily.spells, df.spells.dry.o, df.spells.wet.o)
+
+}
+
+
+## -----------------------------------------------------------------------------
+
+df.daily.spells = as.data.frame(df.daily.spells)
+# colnames(df.daily.spells)[4] = "Type"
+# 
+# df.daily.spells[,6:8] = apply(df.daily.spells[,6:8], 2, as.numeric)
+
+
+## ---- fig.width=8, fig.height=8-----------------------------------------------
+
+#daily mean - wet
+p1 = ggplot(data = subset(df.daily.spells,
+                          Type == "Simulated" & Tag == "Wet Spells"),
+            aes(x = month, y = mean, group = month)) +
+  stat_boxplot(geom = "errorbar") +
+  geom_boxplot() +
+  facet_wrap(~Name, scales = "free") +
+  scale_colour_manual(values=c('blue'='blue'), labels = c('Observed')) +
+  theme_bw() +
+  theme(axis.title = element_text(face = "bold"),
+        # text=element_text(size=14),
+        panel.grid.major = element_line(),
+        legend.title=element_blank(),
+        legend.position = "right",
+        legend.background = element_blank(),
+        legend.box.background = element_blank(),
+        ) +
+  xlab("Month") +
+  ylab("Average Wet Spell Length (days)") +
+  labs(title = "Wet Spell - Mean") +
+  scale_x_continuous(labels = 1:12, breaks = 1:12)  
+
+p1 = p1 + geom_point(data = subset(df.daily.spells,
+                                   Type == "Observed" & Tag == "Wet Spells"),
+                     aes(x = month, y = mean, group = month),
+                     color = "blue", alpha = 0.7,
+                     shape = 4, size = 2, stroke = 1.5,
+                     show.legend = T)
+
+
+print(p1)
+
+# p.out = paste0(outDirPlots, "/meanWetSpellLengths.png")
+# ggsave(filename = p.out, plot = p1, device = "png", height = 8, width = 8, units = "in")
+
+
+## ---- fig.width=8, fig.height=8-----------------------------------------------
+
+#daily mean - dry
+p1 = ggplot(data = subset(df.daily.spells,
+                          Type == "Simulated" & Tag == "Dry Spells"),
+            aes(x = month, y = mean, group = month)) +
+  stat_boxplot(geom = "errorbar") +
+  geom_boxplot() +
+  facet_wrap(~Name, scales = "free") +
+  scale_colour_manual(values=c('blue'='blue'), labels = c('Observed')) +
+  theme_bw() +
+  theme(axis.title = element_text(face = "bold"),
+        # text=element_text(size=14),
+        panel.grid.major = element_line(),
+        legend.title=element_blank(),
+        legend.position = "right",
+        legend.background = element_blank(),
+        legend.box.background = element_blank(),
+        ) +
+  xlab("Month") +
+  ylab("Average Dry Spell Length (days)") +
+  labs(title = "Dry Spell - Mean") +
+  scale_x_continuous(labels = 1:12, breaks = 1:12)  
+
+p1 = p1 + geom_point(data = subset(df.daily.spells,
+                                   Type == "Observed" & Tag == "Dry Spells"),
+                     aes(x = month, y = mean, group = month),
+                     color = "blue", alpha = 0.7,
+                     shape = 4, size = 2, stroke = 1.5,
+                     show.legend = T)
+
+
+print(p1)
+
+# p.out = paste0(outDirPlots, "/meanDrySpellLengths.png")
+# ggsave(filename = p.out, plot = p1, device = "png", height = 8, width = 8, units = "in")
+
+
+## ---- fig.width=8, fig.height=8-----------------------------------------------
+
+#daily sd - wet
+p1 = ggplot(data = subset(df.daily.spells,
+                          Type == "Simulated" & Tag == "Wet Spells"),
+            aes(x = month, y = sd, group = month)) +
+  stat_boxplot(geom = "errorbar") +
+  geom_boxplot() +
+  facet_wrap(~Name, scales = "free") +
+  scale_colour_manual(values=c('blue'='blue'), labels = c('Observed')) +
+  theme_bw() +
+  theme(axis.title = element_text(face = "bold"),
+        # text=element_text(size=14),
+        panel.grid.major = element_line(),
+        legend.title=element_blank(),
+        legend.position = "right",
+        legend.background = element_blank(),
+        legend.box.background = element_blank(),
+        ) +
+  xlab("Month") +
+  ylab("Std. Dev. of Wet Spell Length (days)") +
+  labs(title = "Wet Spell - Standard Deviation") +
+  scale_x_continuous(labels = 1:12, breaks = 1:12)  
+
+p1 = p1 + geom_point(data = subset(df.daily.spells,
+                                   Type == "Observed" & Tag == "Wet Spells"),
+                     aes(x = month, y = sd, group = month),
+                     color = "blue", alpha = 0.7,
+                     shape = 4, size = 2, stroke = 1.5,
+                     show.legend = T)
+
+
+print(p1)
+
+# p.out = paste0(outDirPlots, "/sdWetSpellLengths.png")
+# ggsave(filename = p.out, plot = p1, device = "png", height = 8, width = 8, units = "in")
+
+
+## ---- fig.width=8, fig.height=8-----------------------------------------------
+
+#daily sd
+p1 = ggplot(data = subset(df.daily.spells,
+                          Type == "Simulated" & Tag == "Dry Spells"),
+            aes(x = month, y = sd, group = month)) +
+  stat_boxplot(geom = "errorbar") +
+  geom_boxplot() +
+  facet_wrap(~Name, scales = "free") +
+  scale_colour_manual(values=c('blue'='blue'), labels = c('Observed')) +
+  theme_bw() +
+  theme(axis.title = element_text(face = "bold"),
+        # text=element_text(size=14),
+        panel.grid.major = element_line(),
+        legend.title=element_blank(),
+        legend.position = "right",
+        legend.background = element_blank(),
+        legend.box.background = element_blank(),
+        ) +
+  xlab("Month") +
+  ylab("Std. Dev. of Dry Spell Length (days)") +
+  labs(title = "Dry Spell - Standard Deviation") +
+  scale_x_continuous(labels = 1:12, breaks = 1:12)  
+
+p1 = p1 + geom_point(data = subset(df.daily.spells,
+                                   Type == "Observed" & Tag == "Dry Spells"),
+                     aes(x = month, y = sd, group = month),
+                     color = "blue", alpha = 0.7,
+                     shape = 4, size = 2, stroke = 1.5,
+                     show.legend = T)
+
+
+print(p1)
+
+# p.out = paste0(outDirPlots, "/sdDrySpellLengths.png")
+# ggsave(filename = p.out, plot = p1, device = "png", height = 8, width = 8, units = "in")
+
+
+## ---- fig.width=8, fig.height=8-----------------------------------------------
+
+#daily max - wet
+p1 = ggplot(data = subset(df.daily.spells,
+                          Type == "Simulated" & Tag == "Wet Spells"),
+            aes(x = month, y = max, group = month)) +
+  stat_boxplot(geom = "errorbar") +
+  geom_boxplot() +
+  facet_wrap(~Name, scales = "free") +
+  scale_colour_manual(values=c('blue'='blue'), labels = c('Observed')) +
+  theme_bw() +
+  theme(axis.title = element_text(face = "bold"),
+        # text=element_text(size=14),
+        panel.grid.major = element_line(),
+        legend.title=element_blank(),
+        legend.position = "right",
+        legend.background = element_blank(),
+        legend.box.background = element_blank(),
+        ) +
+  xlab("Month") +
+  ylab("Maximum Wet Spell Length (days)") +
+  labs(title = "Wet Spell - Maximum") +
+  scale_x_continuous(labels = 1:12, breaks = 1:12)  
+
+p1 = p1 + geom_point(data = subset(df.daily.spells,
+                                   Type == "Observed" & Tag == "Wet Spells"),
+                     aes(x = month, y = max, group = month),
+                     color = "blue", alpha = 0.7,
+                     shape = 4, size = 2, stroke = 1.5,
+                     show.legend = T)
+
+
+print(p1)
+
+# p.out = paste0(outDirPlots, "/maxWetSpellLengths.png")
+# ggsave(filename = p.out, plot = p1, device = "png", height = 8, width = 8, units = "in")
+
+
+## ---- fig.width=8, fig.height=8-----------------------------------------------
+
+#daily sd
+p1 = ggplot(data = subset(df.daily.spells,
+                          Type == "Simulated" & Tag == "Dry Spells"),
+            aes(x = month, y = max, group = month)) +
+  stat_boxplot(geom = "errorbar") +
+  geom_boxplot() +
+  facet_wrap(~Name, scales = "free") +
+  scale_colour_manual(values=c('blue'='blue'), labels = c('Observed')) +
+  theme_bw() +
+  theme(axis.title = element_text(face = "bold"),
+        # text=element_text(size=14),
+        panel.grid.major = element_line(),
+        legend.title=element_blank(),
+        legend.position = "right",
+        legend.background = element_blank(),
+        legend.box.background = element_blank(),
+        ) +
+  xlab("Month") +
+  ylab("Maximum Dry Spell Length (days)") +
+  labs(title = "Dry Spell - Maximum") +
+  scale_x_continuous(labels = 1:12, breaks = 1:12)  
+
+p1 = p1 + geom_point(data = subset(df.daily.spells,
+                                   Type == "Observed" & Tag == "Dry Spells"),
+                     aes(x = month, y = max, group = month),
+                     color = "blue", alpha = 0.7,
+                     shape = 4, size = 2, stroke = 1.5,
+                     show.legend = T)
+
+
+print(p1)
+
+# p.out = paste0(outDirPlots, "/maxDrySpellLengths.png")
+# ggsave(filename = p.out, plot = p1, device = "png", height = 8, width = 8, units = "in")
+
+

@@ -21,7 +21,7 @@ head(LowerSantaCruzRiverBasinAZ)
 
 ## ---- results = 'hide'--------------------------------------------------------
 nsim = 5   #number of simulation years
-nrealz = 10 #number of traces in ensemble
+nrealz = 2 #number of traces in ensemble
 
 startTime <- Sys.time() #benchmark run time
 
@@ -29,7 +29,8 @@ z = wx(trainingData = LowerSantaCruzRiverBasinAZ,
        syr = 1970, eyr = 1974,
        nsim = nsim, nrealz = nrealz, aseed = 123,
        wwidth = 3, unitSystem = "U.S. Customary", ekflag = TRUE,
-       awinFlag = TRUE, tempPerturb = TRUE, parallelize = FALSE)
+       awinFlag = FALSE, tempPerturb = TRUE, pcpOccFlag = FALSE,
+       numbCores = 2)
 
 endTime = Sys.time()
 

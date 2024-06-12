@@ -32,7 +32,7 @@
 #' z = wx(trainingData = LowerSantaCruzRiverBasinAZ,
 #'  eyr = 1990, nsim = 5, nrealz = 5, aseed = 23,
 #'   wwidth = 3, unitSystem = "U.S. Customary",
-#'    ekflag = TRUE, awinFlag = TRUE, tempPerturb = TRUE, parallelize = FALSE)
+#'    ekflag = TRUE, awinFlag = TRUE, tempPerturb = TRUE)
 #'
 #'
 #' writeSim(wxOutput = z, nsim = 5, nrealz = 5, path = paste0(tempdir(), "/"), debug = FALSE)

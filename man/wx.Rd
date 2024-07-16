@@ -41,7 +41,7 @@ is required: year, month, day, prcp (daily precipitation),
 
 \item{wwidth}{Set the sampling window for each day of year, a lower value for `wwidth` will sample fewer surrounding days (lower variability) and a higher value will sample more days (higher variability). Typical setting of `wwidth` is between 2 and 15, resulting in a daily sampling window of 5 days and 31 days, respectively.}
 
-\item{unitSystem}{Specify the unit system of your training data. Input a string that is either "U.S. Customary" or "Metric". U.S. Customary corresponds to inches and degrees Farenheit, while Metric corresponds to millimeter and degrees Celsius.
+\item{unitSystem}{Specify the unit system of your training data. Input a string that is either "U.S. Customary" or "Metric". U.S. Customary corresponds to inches and degrees Fahrenheit, while Metric corresponds to millimeter and degrees Celsius.
 If Metric is specified, units will automatically be converted to U.S. Customary for weather simulation, then re-converted to Metric for results output.}
 
 \item{ekflag}{Simulate outside historical envelope using an Epanechnikov kernel? (T/F)}
@@ -54,7 +54,7 @@ it will be iteratively increased until two or more precipitation values are foun
 temperature simulations based on a normal distribution fit on the training data.}
 
 \item{pcpOccFlag}{Set to TRUE to use precipitation occurrence as a variable in the temperature simulation model or set to FALSE to omit precipitation occurrence as a variable.
-Simulated daily temperature uses concurrent daily precipitation occurence as a variable if enabled. By default, this is turned off.}
+Simulated daily temperature uses concurrent daily precipitation occurrence as a variable if enabled. By default, this is turned off.}
 
 \item{numbCores}{Enable parallel computing for precipitation simulation, set number of cores to enable (must be a positive integer greater than or equal to 2). Turned off by default; if set to 0 or 1 it will run as single thread. Use function 'detectCores()' from 'parallel' package to show the number of available cores on your machine.}
 }

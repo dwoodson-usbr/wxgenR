@@ -43,7 +43,7 @@
 #' @param nrealz Number of realizations or traces (i.e., ensemble size).
 #' @param aseed Specify a seed for reproducibility.
 #' @param wwidth Set the sampling window for each day of year, a lower value for `wwidth` will sample fewer surrounding days (lower variability) and a higher value will sample more days (higher variability). Typical setting of `wwidth` is between 2 and 15, resulting in a daily sampling window of 5 days and 31 days, respectively.
-#' @param unitSystem Specify the unit system of your training data. Input a string that is either "U.S. Customary" or "Metric". U.S. Customary corresponds to inches and degrees Farenheit, while Metric corresponds to millimeter and degrees Celsius.
+#' @param unitSystem Specify the unit system of your training data. Input a string that is either "U.S. Customary" or "Metric". U.S. Customary corresponds to inches and degrees Fahrenheit, while Metric corresponds to millimeter and degrees Celsius.
 #' If Metric is specified, units will automatically be converted to U.S. Customary for weather simulation, then re-converted to Metric for results output.
 #' @param ekflag Simulate outside historical envelope using an Epanechnikov kernel? (T/F)
 #' @param awinFlag Set to T or TRUE if you would like to see the results of the adaptive window width.
@@ -52,7 +52,7 @@
 #' @param tempPerturb Set to T or TRUE if you would like to add random noise to the
 #' temperature simulations based on a normal distribution fit on the training data.
 #' @param pcpOccFlag Set to TRUE to use precipitation occurrence as a variable in the temperature simulation model or set to FALSE to omit precipitation occurrence as a variable.
-#' Simulated daily temperature uses concurrent daily precipitation occurence as a variable if enabled. By default, this is turned off.
+#' Simulated daily temperature uses concurrent daily precipitation occurrence as a variable if enabled. By default, this is turned off.
 #' @param numbCores Enable parallel computing for precipitation simulation, set number of cores to enable (must be a positive integer greater than or equal to 2). Turned off by default; if set to 0 or 1 it will run as single thread. Use function 'detectCores()' from 'parallel' package to show the number of available cores on your machine.
 #'
 #'

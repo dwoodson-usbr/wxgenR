@@ -1,7 +1,7 @@
 Package: wxgenR
 Type: Package
 Title: A Stochastic Weather Generator with Seasonality
-Version: 1.4.0
+Version: 1.4.1
 Authors@R: 
   c(person(given = "Subhrendu",
            family = "Gangopadhyay",
@@ -25,7 +25,7 @@ Authors@R:
     person(given = "Eve",
            family = "Halper",
            role = "aut"))         
-Description: A weather generator to simulate precipitation and temperature for regions with seasonality. Users input training data containing precipitation, temperature, and seasonality (up to 20 seasons). Including weather season as a training variable allows users to explore the effects of potential changes in season duration as well as average start- and end-time dates due to phenomena like climate change. Data for training should be a single time series but can originate from station data, basin averages, grid cells, etc.
+Description: A weather generator to simulate precipitation and temperature for regions with seasonality. Users input training data containing precipitation, temperature, and seasonality (up to 26 seasons). Including weather season as a training variable allows users to explore the effects of potential changes in season duration as well as average start- and end-time dates due to phenomena like climate change. Data for training should be a single time series but can originate from station data, basin averages, grid cells, etc.
     Bearup, L., Gangopadhyay, S., & Mikkelson, K. (2021). "Hydroclimate Analysis Lower Santa Cruz River Basin Study (Technical Memorandum No ENV-2020-056)." Bureau of Reclamation.
     Gangopadhyay, S., Bearup, L. A., Verdin, A., Pruitt, T., Halper, E., & Shamir, E. (2019, December 1). "A collaborative stochastic weather generator for climate impacts assessment in the Lower Santa Cruz River Basin, Arizona." Fall Meeting 2019, American Geophysical Union. <https://ui.adsabs.harvard.edu/abs/2019AGUFMGC41G1267G>.
 License: CC0
@@ -42,7 +42,7 @@ Suggests: knitr, rmarkdown, tidyr, reshape2, ggpubr, data.table,
         moments, seas, padr, hydroGOF, SpecsVerification, ggridges
 VignetteBuilder: knitr
 NeedsCompilation: no
-Packaged: 2024-06-12 20:08:32 UTC; dwoodson
+Packaged: 2024-07-12 22:09:25 UTC; dwoodson
 Depends: R (>= 3.5.0)
 Author: Subhrendu Gangopadhyay [aut],
   Lindsay Bearup [aut],
@@ -53,4 +53,4 @@ Author: Subhrendu Gangopadhyay [aut],
   Eve Halper [aut]
 Maintainer: David Woodson <dwoodson@usbr.gov>
 Repository: CRAN
-Date/Publication: 2024-06-12 21:00:02 UTC
+Date/Publication: 2024-07-16 09:20:02 UTC

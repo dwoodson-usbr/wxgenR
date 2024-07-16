@@ -23,6 +23,11 @@
 #'
 
 "simPamt" <- function(dat.d,syr,eyr,wwidth,nsim,nrealz,Xjday,ekflag,awinFlag,numbCores){
+
+  if (is.null(numbCores) || !is.numeric(numbCores) || numbCores < 2) {
+    numbCores = 1
+  }
+
   # require("sm")
   #simulate precipitation amounts and select dates
   #

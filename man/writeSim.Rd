@@ -45,7 +45,8 @@ measure so that the total number of rows in each trace is the same.
 z = wx(trainingData = LowerSantaCruzRiverBasinAZ,
  eyr = 1990, nsim = 5, nrealz = 5, aseed = 23,
   wwidth = 3, unitSystem = "U.S. Customary",
-   ekflag = TRUE, awinFlag = TRUE, tempPerturb = TRUE)
+   ekflag = TRUE, awinFlag = TRUE, tempPerturb = TRUE,
+    pcpOccFlag = FALSE, numbCores = NULL)
 
 
 writeSim(wxOutput = z, nsim = 5, nrealz = 5, path = paste0(tempdir(), "/"), debug = FALSE)

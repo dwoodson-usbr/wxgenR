@@ -71,10 +71,10 @@ nrealz = 2 #number of traces in ensemble
 startTime <- Sys.time() #benchmark run time
 
 z = wx(trainingData = LowerSantaCruzRiverBasinAZ,
-       syr = 1970, eyr = 1974,
+       syr = 1970, eyr = 1974, smo = 10, emo = 9,
        nsim = nsim, nrealz = nrealz, aseed = 123,
-       wwidth = 3, unitSystem = "U.S. Customary", ekflag = TRUE,
-       awinFlag = FALSE, tempPerturb = TRUE, pcpOccFlag = FALSE,
+       wwidth = c(7,1,3), unitSystem = "U.S. Customary", ekflag = TRUE,
+       awinFlag = T, tempPerturb = TRUE, pcpOccFlag = FALSE,
        numbCores = 2)
 
 endTime = Sys.time()

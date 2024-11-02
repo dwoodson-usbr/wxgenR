@@ -34,15 +34,16 @@
 #'    the `unitSystem` input variable. Input data can be station-based, basin averages, grid cells, etc.
 #'        Input data MUST have these variables: year, month, day, prcp, temp, season.
 #' @param syr Optional: subset training data to specific start year (defaults to beginning of training data). Subset will begin on the first day available in `syr`.
-# @param smm Training data start month (you can also use to subset your training data).
-# @param sdd Training data start day (you can also use to subset your training data).
+#' @param smo Training data start month (you can also use to subset your training data).
+# @param sdy Training data start day (you can also use to subset your training data).
 #' @param eyr Optional: subset training data to specific end year (defaults to end of training data). Subset will end on the last day available in `eyr`.
-# @param emm Training data end month (you can also use to subset your training data).
-# @param edd Training data end day (you can also use to subset your training data).
+#' @param emo Training data end month (you can also use to subset your training data).
+# @param edy Training data end day (you can also use to subset your training data).
 #' @param nsim Number of simulation years.
 #' @param nrealz Number of realizations or traces (i.e., ensemble size).
 #' @param aseed Specify a seed for reproducibility.
 #' @param wwidth Set the sampling window for each day of year, a lower value for `wwidth` will sample fewer surrounding days (lower variability) and a higher value will sample more days (higher variability). Typical setting of `wwidth` is between 2 and 15, resulting in a daily sampling window of 5 days and 31 days, respectively.
+#' Can either be a single number for a uniform window width through the year, or a vector of window widths specific to each season in the training data. In the case of variable window widths, the number of window widths should be equal to the number of seasons.
 #' @param unitSystem Specify the unit system of your training data. Input a string that is either "U.S. Customary" or "Metric". U.S. Customary corresponds to inches and degrees Fahrenheit, while Metric corresponds to millimeter and degrees Celsius.
 #' If Metric is specified, units will automatically be converted to U.S. Customary for weather simulation, then re-converted to Metric for results output.
 #' @param ekflag Simulate outside historical envelope using an Epanechnikov kernel? (T/F)
@@ -53,6 +54,7 @@
 #' temperature simulations based on a normal distribution fit on the training data.
 #' @param pcpOccFlag Set to TRUE to use precipitation occurrence as a variable in the temperature simulation model or set to FALSE to omit precipitation occurrence as a variable.
 #' Simulated daily temperature uses concurrent daily precipitation occurrence as a variable if enabled. By default, this is turned off.
+#' @param traceThreshold Threshold for determining whether precipitation depth is considered a trace amount or not. Precipitation depths below this value will be considered trace amounts and will not be used for simulation. A default value of 0.005-inches is used based on National Weather Service guidance. If using a custom trace depth, ensure that it is in the same unit system as your training data and specified by the `unitSystem` flag.
 #' @param numbCores Enable parallel computing for precipitation simulation, set number of cores to enable (must be a positive integer greater than or equal to 2). Turned off by default; if set to 0 or 1 it will run as single thread. Use function 'detectCores()' from 'parallel' package to show the number of available cores on your machine.
 #'
 #'
@@ -100,10 +102,10 @@
 # @import magrittr
 #'
 #'
-"wx" <- function(trainingData, syr = NULL, eyr = NULL,
+"wx" <- function(trainingData, syr = NULL, eyr = NULL, smo = NULL, emo = NULL,
                  nsim, nrealz, aseed, wwidth, unitSystem,
                  ekflag, awinFlag, tempPerturb, pcpOccFlag = FALSE,
-                 numbCores = NULL
+                 traceThreshold = 0.005, numbCores = NULL
                 ){
   #weather generator
   #
@@ -112,54 +114,31 @@
     trainingData = read.table(trainingData, header=T, sep = ",")
   }
 
-  #starting and ending date of simulation
-  if(is.null(syr) == T){
-    syr = trainingData$year[1]
-    smm = trainingData$month[1]
-    sdd = trainingData$day[1]
-    sdate = syr*10^4 + smm*10^2 + sdd
-  }else{
-    trainingData = subset(trainingData, year >= syr)
-    smm = trainingData$month[1]
-    sdd = trainingData$day[1]
-    sdate = syr*10^4+smm*10^2+sdd
-  }
-
-  if(is.null(eyr) == T){
-    eyr = tail(trainingData$year,1)
-    emm = tail(trainingData$month,1)
-    edd = tail(trainingData$day,1)
-    edate = eyr*10^4 + emm*10^2 + edd
-  }else{
-    trainingData = subset(trainingData, year <= eyr)
-    emm = tail(trainingData$month,1)
-    edd = tail(trainingData$day,1)
-    edate = eyr*10^4+emm*10^2+edd
-  }
-
-  #convert units to U.S. Customary if necessary
-  if(unitSystem == "metric" | unitSystem == "Metric"){
-    trainingData$prcp = trainingData$prcp/25.4     #mm to inches
-    trainingData$temp = trainingData$temp*1.8 + 32 #deg C to deg F
-  }
-
   #
   #read data and setup variables to facilitate simulation
-  dat.d <- prepData(trainingData, sdate, edate)
+  preppedData <- prepData(trainingData, syr, smo, eyr, emo, unitSystem, traceThreshold)
+  dat.d = preppedData$dat.d
+  syr = preppedData$syr
+  eyr = preppedData$eyr
+  smo = preppedData$smo
+  emo = preppedData$emo
+  sdate = preppedData$sdate
+  edate = preppedData$edate
+
   #
   #calculate seasonal precipitation transition prob matrix for each year
-  tpm.y2 <- getPtpm(dat.d)$tpm.y2
-  tpm.y <- getPtpm(dat.d)$tpm.y
+  tpm.y2 <- getPtpm(dat.d, traceThreshold)$tpm.y2
+  tpm.y <- getPtpm(dat.d, traceThreshold)$tpm.y
   #
   #calculate parameters for temperature simulation
-  z <- getTpars(dat.d, pcpOccFlag)
+  z <- getTpars(dat.d, pcpOccFlag, traceThreshold, smo, emo)
   dat.d=z$dat.d     #updated with tavgm, sine and cosine terms
   coeftmp=z$coeftmp
   tmp.sd=z$tmp.sd
   #
   #simulate precipitation occurrence and temperature
   message("...Simulate precipitation occurrence and temperature...")
-  z <- simTPocc(aseed,dat.d,nsim,nrealz,coeftmp,tmp.sd,tpm.y2,tpm.y,tempPerturb,pcpOccFlag)
+  z <- simTPocc(aseed,dat.d,smo,emo,nsim,nrealz,coeftmp,tmp.sd,tpm.y2,tpm.y,tempPerturb,pcpOccFlag)
   simyr1=z$simyr1
   X=z$X
   Xjday=z$Xjday
@@ -168,7 +147,8 @@
   #
   #simulate precipitation amount
   message("...Simulate precipitation amount...")
-  z <- simPamt(dat.d,syr,eyr,wwidth,nsim,nrealz,Xjday,ekflag,awinFlag,numbCores)
+  wwidth = as.numeric(wwidth)
+  z <- simPamt(dat.d,syr,eyr,smo,emo,sdate,edate,wwidth,nsim,nrealz,Xjday,Xseas,ekflag,awinFlag,numbCores,traceThreshold)
   Xpamt <- z$Xpamt
   Xpdate <- z$Xpdate
   if (ekflag) bSJ <- z$bSJ

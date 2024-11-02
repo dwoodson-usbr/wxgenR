@@ -16,7 +16,7 @@
 #' @noRd
 #'
 
-"getTpars" <- function(dat.d, pcpOccFlag){
+"getTpars" <- function(dat.d, pcpOccFlag, traceThreshold, smo, emo){
   #calculate paramters for temperature simulation
   #
   # require("plyr")
@@ -34,14 +34,25 @@
   #define day of year
   tmp1 = tmp2 = c()
 
-  k=1
-  for(k in 1:nyr){
-    origin.tmp = ymd(paste(uyr[k],"01","01",sep="-"))
-    start.tmp  = julian(ymd(subset(dat.d, year==uyr[k])$date)[1],origin=origin.tmp)
-    end.tmp    = julian(ymd(subset(dat.d, year==uyr[k])$date)[nrow(subset(dat.d, year==uyr[k]))], origin=origin.tmp)
-    tmp1 = c(tmp1, seq(from=start.tmp,to=end.tmp))
-    tmp2 = c(tmp2, rep(end.tmp, nrow(subset(dat.d, year==uyr[k]))))
-  }#k
+  if(smo == 1){
+    k=1
+    for(k in 1:nyr){
+      origin.tmp = ymd(paste(uyr[k],smo,"01",sep="-"))
+      start.tmp  = julian(ymd(subset(dat.d, year==uyr[k])$date)[1],origin=origin.tmp)
+      end.tmp    = julian(ymd(subset(dat.d, year==uyr[k])$date)[nrow(subset(dat.d, year==uyr[k]))], origin=origin.tmp)
+      tmp1 = c(tmp1, seq(from=start.tmp,to=end.tmp))
+      tmp2 = c(tmp2, rep(end.tmp, nrow(subset(dat.d, year==uyr[k]))))
+    }#k
+  }else if(smo > 1){
+    k=1
+    for(k in 1:(nyr-1)){
+      origin.tmp = ymd(paste(uyr[k],smo,"01",sep="-"))
+      start.tmp  = julian(ymd(subset(dat.d, year==uyr[k] & month >= smo)$date)[1],origin=origin.tmp)
+      end.tmp    = julian(ymd(subset(dat.d, year==uyr[k+1] & month <= emo)$date)[nrow(subset(dat.d, year==uyr[k+1] & month <= emo))], origin=origin.tmp)
+      tmp1 = c(tmp1, seq(from=start.tmp,to=end.tmp))
+      tmp2 = c(tmp2, rep(end.tmp, nrow(subset(dat.d, year==uyr[k] & month >= smo))+nrow(subset(dat.d, year==uyr[k+1] & month <= emo))))
+    }#k
+  }
 
   #change 0-364 to 1-365
   dat.d$jday = tmp1+1
@@ -58,9 +69,9 @@
   dat.d = left_join(dat.d, montmp.obs, by=c("year","month"))
   Rt <- dat.d$tavgm
   #define precip occurrence for daily temp series
-  oc <- (dat.d$prcp >= 0.01) + 0
+  oc <- (dat.d$prcp >= traceThreshold) + 0
   #set NAs to 0 precipitation
-  oc[which(is.na(oc), T)] = 0
+  # oc[which(is.na(oc), T)] = 0
   dat.d$oc=oc
   dat.d$ct=ct   #cosine term
   dat.d$st=st   #sine term

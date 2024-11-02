@@ -8,7 +8,8 @@
 #' @param wwidth Window set for finding surrounding days: +/- wwidth.
 #' @param nsim Number of simulation years.
 #' @param nrealz Number of realizations.
-#' @param Xjday Julian day when prcp occurs, from simTPocc function
+#' @param Xjday Simulation Julian day when prcp occurs, from simTPocc function
+#' @param Xseas Simulation season index from simTPocc function
 #' @param ekflag Simulate outside historical envelope?
 #' @param numbCores Enable parallel computing for precipitation simulation, set number of cores to enable (must be a positive integer greater than or equal to 2). Turned off by default; if set to 0 or 1 it will run as single thread. Use function 'detectCores()' from 'parallel' package to show the number of available cores on your machine.
 #'
@@ -22,7 +23,7 @@
 #' @noRd
 #'
 
-"simPamt" <- function(dat.d,syr,eyr,wwidth,nsim,nrealz,Xjday,ekflag,awinFlag,numbCores){
+"simPamt" <- function(dat.d,syr,eyr,smo,emo,sdate,edate,wwidth,nsim,nrealz,Xjday,Xseas,ekflag,awinFlag,numbCores,traceThreshold){
 
   if (is.null(numbCores) || !is.numeric(numbCores) || numbCores < 2) {
     numbCores = 1
@@ -33,14 +34,25 @@
   #
   #get month for a given julian day
   lpyear = dat.d$year[min(which(leap_year(dat.d$year)))]
-  aday <- ymd(paste(lpyear, 1, 1, sep="-")) #jan 1 of a leap year to have a 366-day year
+  aday <- ymd(paste(lpyear, smo, 1, sep="-")) #jan 1 of a leap year to have a 366-day year
   it1 = which(dat.d$date == aday)
   it2 = it1+366-1
   jdaymth <- dat.d$month[it1:it2] #calculations are based on a 366-day year
   #
   #get dates in window for each julian day 1-366
-  Xdates=getDatesInWindow(syr,eyr,wwidth,leapflag=T)
-  #
+  lw = length(wwidth)
+  if(lw == 1){
+    Xdates = getDatesInWindow(syr,eyr,smo,emo,sdate,edate,wwidth,leapflag=T)
+  } else if(lw > 1){
+    Xdates.vw = list(length = lw)
+    for(i in 1:lw){
+      # print(wwidth[i])
+      Xdates.vw[[i]] = getDatesInWindow(syr,eyr,smo,emo,sdate,edate,wwidth[i],leapflag=T)
+    }
+    names(Xdates.vw) = wwidth
+  }
+
+  #Run routine for Epanchnikov kernal if enabled
   if (ekflag){
 
     #get the bandwidth for each julian day
@@ -50,26 +62,42 @@
     jday = 1
     for (jday in 1:366){
 
+      # print(jday)
+
+      #if variable window width, find the season in which current jday exists
+      if(lw > 1){
+        seas.j = Xseas[jday,1]
+        if(is.na(seas.j)) seas.j = Xseas[jday-1,1] #if indexed season for jday is NA, use prior day
+        if(is.na(seas.j)) seas.j = Xseas[jday+1,1] #if still NA, use following day
+        Xdates = Xdates.vw[[seas.j]]
+        #set adaptive window width to window width for current season
+        wwidth.adapt = wwidth[seas.j]
+      } else{
+        wwidth.adapt = wwidth
+      }
+
       diw <- na.omit(Xdates[jday,])  #dates in window for a given julian day
+
       idxlist <- vector()
 
       iday = 1
       for (iday in 1:length(diw)){
         idxlist[iday] = which(dat.d$date1==diw[iday])
       } #iday
+
       baprcp <- dat.d$prcp[idxlist]       #basin average precipitation
                                           #also includes 0 prcp amount
                                           #for days within the window
 
-      pamt <- baprcp[which(baprcp>=0.01)] #precipitation amount vector
-      wwidth.adapt = wwidth
-      #
-      while(length(pamt) < 2){
+      pamt <- baprcp[which(baprcp>=traceThreshold)] #precipitation amount vector
+
+      #### Begin adaptive window width process if less than 2 prcp amounts exist
+      while(length(pamt) < 2 | all(diff(pamt) == 0)){
 
         wwidth.adapt = wwidth.adapt + 1
 
         #get dates in window for each julian day 1-366
-        Xdates.adapt=getDatesInWindow(syr,eyr,wwidth.adapt,leapflag=T)
+        Xdates.adapt=getDatesInWindow(syr,eyr,smo,emo,sdate,edate,wwidth.adapt,leapflag=T)
         diw <- na.omit(Xdates.adapt[jday,])  #dates in window for a given julian day
         idxlist <- vector()
 
@@ -78,7 +106,7 @@
         } #iday
         baprcp <- dat.d$prcp[idxlist]
 
-        pamt <- baprcp[which(baprcp>=0.01)] #precipitation amount vector
+        pamt <- baprcp[which(baprcp>=traceThreshold)] #precipitation amount vector
 
       }
 
@@ -111,7 +139,7 @@
 
     irealz = 1
     result <- foreach(irealz=1:nrealz, .packages='foreach', .export=c('repan', 'getDatesInWindow')) %dopar% {
-    # for (irealz in 1:nrealz){
+    # for (irelz in 1:nrealz){
 
       message(paste0("-- Starting trace number ", irealz, " --"))
       xp = Xjday[,irealz]
@@ -127,6 +155,18 @@
           Xpamt[ixp] = 0.0
         }else{
 
+          #if variable window width, find the season in which current jday exists
+          if(lw > 1){
+            seas.j = Xseas[ixp,1]
+            if(is.na(seas.j)) seas.j = Xseas[ixp-1,1] #if indexed season for jday is NA, use prior day
+            if(is.na(seas.j)) seas.j = Xseas[ixp+1,1] #if still NA, use following day
+            Xdates = Xdates.vw[[seas.j]]
+            #set adaptive window width to window width for current season
+            wwidth.adapt = wwidth[seas.j]
+          } else{
+            wwidth.adapt = wwidth
+          }
+
           diw <- na.omit(Xdates[jd,])  #dates in window for a given julian day
           idxlist <- vector()
 
@@ -139,18 +179,17 @@
           #also includes 0 prcp amount
           #days within the window
 
-          np = length(which(baprcp>=0.01))      #number of prcp days in window
-          pdate <- diw[which(baprcp>=0.01)]   #dates in window where prcp occurred
-          pamt <- baprcp[which(baprcp>=0.01)] #precipitation amount vector
+          np = length(which(baprcp>=traceThreshold))      #number of prcp days in window
+          pdate <- diw[which(baprcp>=traceThreshold)]   #dates in window where prcp occurred
+          pamt <- baprcp[which(baprcp>=traceThreshold)] #precipitation amount vector
 
-          wwidth.adapt = wwidth
-          #
+          #Adaptive window width routine
           while(np < 2){
 
             wwidth.adapt = wwidth.adapt + 1
 
             #get dates in window for each julian day 1-366
-            Xdates.adapt = getDatesInWindow(syr,eyr,wwidth.adapt,leapflag=T)
+            Xdates.adapt = getDatesInWindow(syr,eyr,smo,emo,sdate,edate,wwidth.adapt,leapflag=T)
 
             diw <- na.omit(Xdates.adapt[jd,])  #dates in window for a given julian day
             idxlist <- vector()
@@ -164,9 +203,9 @@
             #also includes 0 prcp amount
             #days within the window
 
-            np = length(which(baprcp>=0.01))      #number of prcp days in window
-            pdate <- diw[which(baprcp>=0.01)]   #dates in window where prcp occurred
-            pamt <- baprcp[which(baprcp>=0.01)] #precipitation amount vector
+            np = length(which(baprcp>=traceThreshold))      #number of prcp days in window
+            pdate <- diw[which(baprcp>=traceThreshold)]   #dates in window where prcp occurred
+            pamt <- baprcp[which(baprcp>=traceThreshold)] #precipitation amount vector
 
             if(awinFlag == T){
               message(paste0("\n Window width too small on Julian day ", jd,", increasing window to ", wwidth.adapt*2+1, " days"))
@@ -228,6 +267,18 @@
           Xpamt[ixp,irealz] = 0.0
         }else{
 
+          #if variable window width, find the season in which current jday exists
+          if(lw > 1){
+            seas.j = Xseas[ixp,1]
+            if(is.na(seas.j)) seas.j = Xseas[ixp-1,1] #if indexed season for jday is NA, use prior day
+            if(is.na(seas.j)) seas.j = Xseas[ixp+1,1] #if still NA, use following day
+            Xdates = Xdates.vw[[seas.j]]
+            #set adaptive window width to window width for current season
+            wwidth.adapt = wwidth[seas.j]
+          } else{
+            wwidth.adapt = wwidth
+          }
+
           diw <- na.omit(Xdates[jd,])  #dates in window for a given julian day
           idxlist <- vector()
 
@@ -240,18 +291,17 @@
                                               #also includes 0 prcp amount
                                               #days within the window
 
-          np = length(which(baprcp>=0.01))      #number of prcp days in window
-          pdate <- diw[which(baprcp>=0.01)]   #dates in window where prcp occurred
-          pamt <- baprcp[which(baprcp>=0.01)] #precipitation amount vector
+          np = length(which(baprcp>=traceThreshold))      #number of prcp days in window
+          pdate <- diw[which(baprcp>=traceThreshold)]   #dates in window where prcp occurred
+          pamt <- baprcp[which(baprcp>=traceThreshold)] #precipitation amount vector
 
-          wwidth.adapt = wwidth
-          #
+          #adaptive window width routine
           while(np < 2){
 
             wwidth.adapt = wwidth.adapt + 1
 
             #get dates in window for each julian day 1-366
-            Xdates.adapt = getDatesInWindow(syr,eyr,wwidth.adapt,leapflag=T)
+            Xdates.adapt = getDatesInWindow(syr,eyr,smo,emo,sdate,edate,wwidth.adapt,leapflag=T)
 
             diw <- na.omit(Xdates.adapt[jd,])  #dates in window for a given julian day
             idxlist <- vector()
@@ -265,9 +315,9 @@
             #also includes 0 prcp amount
             #days within the window
 
-            np = length(which(baprcp>=0.01))      #number of prcp days in window
-            pdate <- diw[which(baprcp>=0.01)]   #dates in window where prcp occurred
-            pamt <- baprcp[which(baprcp>=0.01)] #precipitation amount vector
+            np = length(which(baprcp>=traceThreshold))      #number of prcp days in window
+            pdate <- diw[which(baprcp>=traceThreshold)]   #dates in window where prcp occurred
+            pamt <- baprcp[which(baprcp>=traceThreshold)] #precipitation amount vector
 
             if(awinFlag == T){
               message(paste0("\n Window width too small on Julian day ", jd,", increasing window to ", wwidth.adapt*2+1, " days"))

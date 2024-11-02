@@ -4,12 +4,20 @@
 \alias{getDatesInWindow}
 \title{Get dates in window}
 \usage{
-getDatesInWindow(syr, eyr, wwidth, leapflag = FALSE)
+getDatesInWindow(syr, eyr, smo, emo, sdate, edate, wwidth, leapflag = FALSE)
 }
 \arguments{
 \item{syr}{Start year.}
 
 \item{eyr}{End year.}
+
+\item{smo}{Start month.}
+
+\item{emo}{End month.}
+
+\item{sdate}{Start date.}
+
+\item{edate}{End date.}
 
 \item{wwidth}{Window set for finding surrounding days (semi-bandwidth).}
 
@@ -43,6 +51,7 @@ where it is necessary to find N adjacent days for each day of year in order to t
 the bias correction algorithm.
 }
 \examples{
- getDatesInWindow(syr = 2000, eyr = 2005, wwidth = 3, leapflag = FALSE)
+ getDatesInWindow(syr = 2000, eyr = 2005, smo = 10, emo = 09,
+  sdate = 20001001, edate = 20050930, wwidth = 3, leapflag = FALSE)
 
 }

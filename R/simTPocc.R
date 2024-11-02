@@ -20,7 +20,7 @@
 #' @noRd
 #'
 
-"simTPocc" <- function(aseed, dat.d, nsim, nrealz, coeftmp, tmp.sd, tpm.y2, tpm.y, tempPerturb, pcpOccFlag){
+"simTPocc" <- function(aseed, dat.d, smo, emo, nsim, nrealz, coeftmp, tmp.sd, tpm.y2, tpm.y, tempPerturb, pcpOccFlag){
   #simulate precipitation occurrence and temperature magnitude
   #
   #initialize arrays
@@ -35,14 +35,35 @@
   nyr = length(uyr)
   set.seed(aseed) #set seed
   #
+
+  # Define the lengths of each month in a 366-day year
+  month_lengths = c(31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
+  full_months = rep(1:12, times = month_lengths)  # Correctly repeat months based on their lengths
+
+  # Find the start and end indices based on the month
+  start_index = min(which(full_months == smo))
+  end_index = max(which(full_months == emo))
+
+  # Create the custom month vector for the specified range
+  if (start_index <= end_index) {
+    custom_months = full_months[start_index:end_index]
+  } else {
+    custom_months = c(full_months[start_index:366], full_months[1:end_index])
+  }
+
+  # Repeat for the number of simulation years
+  zz <- rep(custom_months, nsim)
+  yy <- rep(1:nsim, each = length(custom_months)) # Simulation year
+
   #get month for a given julian day
   lpyear = uyr[min(which(leap_year(uyr)))]
-  aday <- ymd(paste(lpyear, 1, 1, sep="-")) #jan 1 of a leap year to have a 366-day year
+  aday <- ymd(paste(lpyear, smo, 1, sep="-")) #jan 1 of a leap year to have a 366-day year
   it1 = which(dat.d$date == aday)
   it2 = it1+366-1
   jdaymth <- dat.d$month[it1:it2]
   zz <- rep(jdaymth, nsim) #simulation month
   yy <- rep(1:nsim, each=366) #simulation year
+
   #
   #realization loop
   irealz = 1
@@ -51,34 +72,85 @@
     prcpocc <- temp <- matrix(NA, nrow=366, ncol=nsim) #366-day
     pseas <- pweek <- matrix(NA, nrow=366, ncol=nsim)  #366-day
     simyr <- rep(NA, nsim)
+
     #loop through simulation years
     isim=1
     for (isim in 1:nsim){
-      iyr = sample(1:nyr, 1)          #randomly select a year index
-      simyr[isim] = uyr[iyr]
-      simyr1[isim,irealz] = simyr[isim]
-      leapflag = 0
-      if (leap_year(uyr[iyr])) leapflag = 1
-      nt = 365 + leapflag
-      startdate <- ymd(paste(uyr[iyr], 1, 1, sep="-")) #jan 1 of year uyr[iyr]
-      it1 = which(dat.d$date == startdate) #starting index of data
-      it2 = it1+nt-1
-      dframe <- dat.d[it1:it2,] #data subset for simulation
-      prcpocc[1,isim] = dframe$oc[1]
-      if(is.na(dframe$temp[1]) == FALSE){
-        temp[1,isim] = dframe$temp[1]      #temperature for day=1 of simulation
-      }else if(is.na(dframe$temp[1]) == TRUE){
-        temp[1,isim] = dframe$tavgm[1]      #temperature for day=1 of simulation
+
+      if(smo == 1){ #leap year or not for calendar year
+
+        iyr = sample(1:nyr, 1)          #randomly select a year index
+        simyr[isim] = uyr[iyr]
+        simyr1[isim,irealz] = simyr[isim]
+
+        leapflag = 0
+        if (leap_year(uyr[iyr])) leapflag = 1
+        nt = 365 + leapflag
+        startdate <- ymd(paste(uyr[iyr], smo, 1, sep="-")) #1st date of year uyr[iyr]
+
+        # startdate <- ymd(paste(uyr[iyr], 1, 1, sep="-")) #jan 1 of year uyr[iyr]
+        it1 = which(dat.d$date == startdate) #starting index of data
+        it2 = it1+nt-1
+        # dframe = subset(dat.d, )
+        dframe <- dat.d[it1:it2,] #data subset for simulation
+
+      }else if(smo > 1){ #leap year or not for water year
+
+        iyr = sample(1:(nyr-1), 1)          #randomly select a year index
+        smpl_yr = uyr[-1][iyr]
+        simyr[isim] = smpl_yr          #remove year 1 since not a water year included in data
+        simyr1[isim,irealz] = simyr[isim]
+
+        leapflag = 0
+        if (leap_year(smpl_yr)) leapflag = 1
+        nt = 365 + leapflag
+        startdate <- ymd(paste(smpl_yr-1, smo, 1, sep="-")) #1st date of year uyr[iyr]
+
+        it1 = which(dat.d$date == startdate) #starting index of data
+        it2 = it1+nt-1
+        # dframe = subset(dat.d, )
+        dframe <- dat.d[it1:it2,] #data subset for simulation
+
       }
-      if (dframe$oc[1]==0) pstate=1      #dry, corresponds to row number 1
-      if (dframe$oc[1]==1) pstate=2      #wet, corresponds to row number 2
+      prcpocc[1,isim] = dframe$oc[1]
+
+      if(is.na(dframe$temp[1]) == F){
+        temp[1,isim] = dframe$temp[1]      #temperature for day=1 of simulation
+      }else if(is.na(dframe$temp[1]) == T & is.na(dframe$tavgm[1]) == F){ #if day 1 temp is missing, use monthly average
+        temp[1,isim] = dframe$tavgm[1]      #temperature for day=1 of simulation
+      }else{ #if monthly average is NA for that year, randomly sample other years until a monthly average is found
+        while(is.na(temp[1,isim])){
+          iyr.t = sample(1:nyr, 1)          #randomly select a year index
+          simyr.t = uyr[iyr.t]
+          simyr1[isim,irealz] = simyr[isim]
+
+          startdate.t <- ymd(paste(simyr.t, 1, 1, sep="-")) #jan 1 of year uyr[iyr]
+          it1.t = which(dat.d$date == startdate.t) #starting index of data
+          it2.t = it1+nt-1
+          dframe.t <- dat.d[it1.t:it2.t,] #data subset for simulation
+
+          temp[1,isim] = dframe.t$tavgm[1]
+
+        }
+      }
+
+      if(is.na(dframe$oc[1])){
+        pstate=1 #if occurence is NA, set to dry
+      }else if(dframe$oc[1]==0){
+        pstate=1      #dry, corresponds to row number 1
+      }else if(dframe$oc[1]==1){
+        pstate=2      #wet, corresponds to row number 2
+      }
+
       aseas <- dframe$season[1]          #selected season for sim day 1
       aweek <- dframe$week[1]            #week number for sim day 1
       ptvec <- tpm.y2[pstate,,aseas,iyr] #prcp, prob transition vector
+
       #Use 30-year average probabilities if transition is not found within the season that year
       if(is.na(ptvec[1]) == TRUE | is.na(ptvec[2]) == TRUE) ptvec=tpm.y[pstate,,aseas]
       pseas[1,isim] = aseas
       pweek[1,isim] = aweek
+
       #loop through days in simulated year
       it = 2
       for (it in 2:nt){

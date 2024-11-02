@@ -8,6 +8,8 @@ wx(
   trainingData,
   syr = NULL,
   eyr = NULL,
+  smo = NULL,
+  emo = NULL,
   nsim,
   nrealz,
   aseed,
@@ -17,6 +19,7 @@ wx(
   awinFlag,
   tempPerturb,
   pcpOccFlag = FALSE,
+  traceThreshold = 0.005,
   numbCores = NULL
 )
 }
@@ -33,13 +36,18 @@ is required: year, month, day, prcp (daily precipitation),
 
 \item{eyr}{Optional: subset training data to specific end year (defaults to end of training data). Subset will end on the last day available in `eyr`.}
 
+\item{smo}{Training data start month (you can also use to subset your training data).}
+
+\item{emo}{Training data end month (you can also use to subset your training data).}
+
 \item{nsim}{Number of simulation years.}
 
 \item{nrealz}{Number of realizations or traces (i.e., ensemble size).}
 
 \item{aseed}{Specify a seed for reproducibility.}
 
-\item{wwidth}{Set the sampling window for each day of year, a lower value for `wwidth` will sample fewer surrounding days (lower variability) and a higher value will sample more days (higher variability). Typical setting of `wwidth` is between 2 and 15, resulting in a daily sampling window of 5 days and 31 days, respectively.}
+\item{wwidth}{Set the sampling window for each day of year, a lower value for `wwidth` will sample fewer surrounding days (lower variability) and a higher value will sample more days (higher variability). Typical setting of `wwidth` is between 2 and 15, resulting in a daily sampling window of 5 days and 31 days, respectively.
+Can either be a single number for a uniform window width through the year, or a vector of window widths specific to each season in the training data. In the case of variable window widths, the number of window widths should be equal to the number of seasons.}
 
 \item{unitSystem}{Specify the unit system of your training data. Input a string that is either "U.S. Customary" or "Metric". U.S. Customary corresponds to inches and degrees Fahrenheit, while Metric corresponds to millimeter and degrees Celsius.
 If Metric is specified, units will automatically be converted to U.S. Customary for weather simulation, then re-converted to Metric for results output.}
@@ -55,6 +63,8 @@ temperature simulations based on a normal distribution fit on the training data.
 
 \item{pcpOccFlag}{Set to TRUE to use precipitation occurrence as a variable in the temperature simulation model or set to FALSE to omit precipitation occurrence as a variable.
 Simulated daily temperature uses concurrent daily precipitation occurrence as a variable if enabled. By default, this is turned off.}
+
+\item{traceThreshold}{Threshold for determining whether precipitation depth is considered a trace amount or not. Precipitation depths below this value will be considered trace amounts and will not be used for simulation. A default value of 0.005-inches is used based on National Weather Service guidance. If using a custom trace depth, ensure that it is in the same unit system as your training data and specified by the `unitSystem` flag.}
 
 \item{numbCores}{Enable parallel computing for precipitation simulation, set number of cores to enable (must be a positive integer greater than or equal to 2). Turned off by default; if set to 0 or 1 it will run as single thread. Use function 'detectCores()' from 'parallel' package to show the number of available cores on your machine.}
 }

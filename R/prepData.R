@@ -24,14 +24,55 @@
 #' @noRd
 
 
-"prepData" <- function(trainingData, sdate, edate){
+"prepData" <- function(trainingData, syr, smo, eyr, emo, unitSystem, traceThreshold){
 
-  # require("lubridate")
-  # if(typeof(trainingData) == "character"){
-  #   dat.d = read.table(trainingData, header=T, sep=",")
-  # } else{
-    dat.d = trainingData
-  # }
+  #starting and ending date of simulation
+  if(is.null(syr) == T){
+    syr = trainingData$year[1]
+  }else{
+    trainingData = subset(trainingData, year >= syr)
+  }
+
+  if(is.null(smo)){
+    smo = trainingData$month[1] #if no start month, use beginning of record (already subset by years)
+  }else if(is.character(smo)){
+    smo = match_month(smo) #otherwise convert character month to numeric
+  }
+
+  sdy = trainingData$day[1]
+
+  # trainingData = subset(trainingData, year >= syr & month >= smo & day >= 1)
+
+  sdate = syr*10^4+smo*10^2+sdy
+
+  if(is.null(eyr) == T){
+    eyr = tail(trainingData$year,1)
+  }else{
+    trainingData = subset(trainingData, year <= eyr)
+  }
+
+  if(is.null(emo)){
+    emo = tail(trainingData$month, 1) #if no end month, use end of record (already subset by years)
+    edy = tail(trainingData$day,1)
+  }else if(is.character(emo)){
+    emo = match_month(emo) #otherwise convert character month to numeric
+    edy = tail(subset(trainingData, month == emo)$day,1)
+  }else if(is.numeric(emo)){
+    edy = tail(subset(trainingData, month == emo)$day,1)
+  }
+
+  # trainingData = subset(trainingData, year <= eyr & month <= emo & day <= 30)
+
+  edate = eyr*10^4 + emo*10^2 + edy
+
+  #convert units to U.S. Customary if necessary
+  if(unitSystem == "metric" | unitSystem == "Metric"){
+    trainingData$prcp = trainingData$prcp/25.4     #mm to inches
+    trainingData$temp = trainingData$temp*1.8 + 32 #deg C to deg F
+    if(traceThreshold != 0.005) traceThreshold = traceThreshold/25.4           #mm to inches
+  }
+
+  dat.d = trainingData
 
   dat.d$date1 = dat.d$year*10000 + dat.d$month*100 + dat.d$day
 
@@ -49,7 +90,7 @@
   dat.d$states = dat.d$season
   #
   #default
-  return(dat.d)
+  return(list(dat.d = dat.d, syr = syr, eyr = eyr, smo = smo, emo = emo, sdate = sdate, edate = edate))
 } #end function
 
 

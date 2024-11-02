@@ -26,8 +26,9 @@ nrealz = 2 #number of traces in ensemble
 startTime <- Sys.time() #benchmark run time
 
 z = wx(trainingData = BlacksburgVA, syr = 2000, eyr = 2004,
+       smo = 1, emo = 12,
        nsim = nsim, nrealz = nrealz, aseed = 123,
-       wwidth = 1, unitSystem = "Metric", ekflag = TRUE,
+       wwidth = c(7,5,1,3), unitSystem = "Metric", ekflag = TRUE,
        awinFlag = FALSE, tempPerturb = TRUE, pcpOccFlag = FALSE,
        numbCores = 2)
 
@@ -132,7 +133,7 @@ formatting = function(df){
     mutate(yday = as.numeric(yday(Date)),
            week = as.numeric(week(Date))) %>%
     relocate(c(Date,yday,week), .after = day) %>%
-    melt(id = 1:6)
+    reshape2::melt(id = 1:6)
     
   return(df)
 }

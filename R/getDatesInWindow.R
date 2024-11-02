@@ -20,6 +20,10 @@
 #'
 #' @param syr Start year.
 #' @param eyr End year.
+#' @param smo Start month.
+#' @param emo End month.
+#' @param sdate Start date.
+#' @param edate End date.
 #' @param wwidth Window set for finding surrounding days (semi-bandwidth).
 #' @param leapflag Set index for leap years (default = F).
 #'
@@ -32,11 +36,12 @@
 #'
 #'
 #' @examples
-#'  getDatesInWindow(syr = 2000, eyr = 2005, wwidth = 3, leapflag = FALSE)
+#'  getDatesInWindow(syr = 2000, eyr = 2005, smo = 10, emo = 09,
+#'   sdate = 20001001, edate = 20050930, wwidth = 3, leapflag = FALSE)
 #'
 #' @export
 
-"getDatesInWindow" <- function(syr, eyr, wwidth, leapflag = FALSE){
+"getDatesInWindow" <- function(syr, eyr, smo, emo, sdate, edate, wwidth, leapflag = FALSE){
 
 #input(s)
 #syr - starting year
@@ -55,13 +60,46 @@
 #   leapflag == FALSE
 # } else{leapflag == TRUE}
 
-month = c(31,29,31,30,31,30,31,31,30,31,30,31) #assumes a 366-day year. March 1st is always Julian Day #61.
+# Month days
+month = c(31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
+
+# # Create a custom ordering function
+# reorder_months <- function(months, start, end) {
+#   # Create a sequence from start to end wrapping around
+#   if (start <= end) {
+#     return(months[start:end])
+#   } else {
+#     return(c(months[start:length(months)], months[1:end]))
+#   }
+# }
+#
+# # Reorder the months
+# month = reorder_months(month, smo, emo)
+
+# Print the result
+# print(month)
+
+# Function to generate the custom sequence of month numbers
+generate_month_sequence <- function(start, end) {
+  if (start <= end) {
+    return(start:end)  # Simple case: no wrap around
+  } else {
+    return(c(start:12, 1:end))  # Wrap around case
+  }
+}
+
+# Generate the sequence
+month_sequence = generate_month_sequence(smo, emo)
+
+# Print the result
+# print(month_sequence)
 
 yrlist = syr:eyr
 nyrs = length(yrlist)
 
 noleapdate = rep(NA,length(yrlist)) #list of years with no leap dates
 
+i = 1
 for (i in 1:length(yrlist)){
   yr = yrlist[i]
   if (yr%%4 != 0) date = (yr*10000+2*100+29)
@@ -77,14 +115,20 @@ datevec = rep(NA, wwidth)
 juldayvec = rep(NA, wwidth)
 mmddvec = rep(NA, wwidth)
 
+yr = yrlist[1]
+mm = month_sequence[1]
+id = 1
 for (yr in yrlist){
   jday = 0
-  for (mm in 1:12){
+  for (mm in month_sequence){
+    # print(mm)
     ndays = month[mm]
+    # print(ndays)
     for (id in 1:ndays){
       jday = jday+1
       #date=as.numeric(paste((yr*10000+mm*100+id),sprintf("%03d",jday),sep=""))
       date = (yr*10000+mm*100+id)
+      if(date < sdate | date > edate) date = NA #set NA for dates not between sdate and edate (an issue for non-calendar year approaches)
       datevec = append(datevec, date)
       juldayvec = append(juldayvec, jday)
       mmdd = mm*100+id
@@ -100,18 +144,21 @@ mmddvec = append(mmddvec, rep(NA, wwidth))
 JMAT = matrix(NA, nrow = 366, ncol = nyrs*(2*wwidth+1)) #matrix with list of dates (columns)for a given Julian day (1 through 366)
 
 #loop through all the 366 Julian days
+julday=1
 for (julday in 1:366){
   avec = which(juldayvec == julday)
   indexlist = vector()
+  a = avec[1]
   for (a in avec){
     i1 = (a-wwidth)
     i2 = (a+wwidth)
     index = i1:i2
 
     if (leapflag){
+      # print("leap = T")
       index[which((datevec[index]%in%noleapdate) == TRUE)] = NA
-    }
-    else{
+    }else{
+      # print("leap = F")
       if (length(intersect(datevec[index],noleapdate)) > 0){
         rindex = which((datevec[index]%in%noleapdate) == TRUE) #remove index
         index = i1:(i2+1)
@@ -128,13 +175,14 @@ for (julday in 1:366){
 #get month-day-julian day relationship
 mdjday = vector()
 jday = 0
-for (mm in 1:12){
+for (mm in month_sequence){
   ndays = month[mm]
   for (id in 1:ndays){
     jday = jday+1
     mdjday[jday] = 100*mm+id
   } #id
 } #mm
+
 
 return(JMAT)
 

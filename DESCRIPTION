@@ -1,7 +1,7 @@
 Package: wxgenR
 Type: Package
 Title: A Stochastic Weather Generator with Seasonality
-Version: 1.4.1
+Version: 1.4.2
 Authors@R: 
   c(person(given = "Subhrendu",
            family = "Gangopadhyay",
@@ -42,7 +42,7 @@ Suggests: knitr, rmarkdown, tidyr, reshape2, ggpubr, data.table,
         moments, seas, padr, hydroGOF, SpecsVerification, ggridges
 VignetteBuilder: knitr
 NeedsCompilation: no
-Packaged: 2024-07-12 22:09:25 UTC; dwoodson
+Packaged: 2024-11-01 23:39:46 UTC; dwoodson
 Depends: R (>= 3.5.0)
 Author: Subhrendu Gangopadhyay [aut],
   Lindsay Bearup [aut],
@@ -53,4 +53,4 @@ Author: Subhrendu Gangopadhyay [aut],
   Eve Halper [aut]
 Maintainer: David Woodson <dwoodson@usbr.gov>
 Repository: CRAN
-Date/Publication: 2024-07-16 09:20:02 UTC
+Date/Publication: 2024-11-02 00:30:02 UTC

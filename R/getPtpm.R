@@ -12,7 +12,7 @@
 #' @noRd
 #'
 
-"getPtpm" <- function(dat.d){
+"getPtpm" <- function(dat.d, traceThreshold){
   #calculate seasonal precipitation transition probability matrix for each year
   #
   yr.d = dat.d$year
@@ -21,14 +21,14 @@
   #precipitation data
   pcp.d = dat.d$prcp
   #transition probabilities for wet/dry spells
-  #compute wet and dry transitions for each state and each year
+  #compute wet and dry transitions for each state (season) in a year, repeat for each year
   tpm.y2 = array(data = NA, dim = c(2,2,max(dat.d$states), length(uyr)))
   j=1
   for(j in 1:length(uyr)){
     k=1
     for(k in 1:max(dat.d$states)){
       if(sum(dat.d$states == k & yr.d == uyr[j]) == 0) next
-      x = ts((pcp.d[dat.d$states == k & yr.d == uyr[j]] >= 0.01) + 0,1)
+      x = ts((pcp.d[dat.d$states == k & yr.d == uyr[j]] >= traceThreshold) + 0,1)
       tpm.tmp = transProbMatrix(x)
       tpm.y2[as.numeric(rownames(tpm.tmp))+1, as.numeric(colnames(tpm.tmp))+1,
              k,j] = tpm.tmp

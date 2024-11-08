@@ -1,0 +1,9 @@
+# wxgenR
+A weather generator to simulate precipitation and temperature for regions with seasonality. 
+Users input training data containing precipitation, temperature, and seasonality (up to 26 seasons). 
+Including weather season as a training variable allows users to explore the effects of potential changes in season duration as well as average start- and end-time dates due to phenomena like climate change. 
+Data for training should be a single time series but can originate from station data, basin averages, grid cells, etc.
+
+# To get started
+1. To obtain wxgenR: either download from CRAN (https://cran.r-project.org/web/packages/wxgenR/index.html) or download R code directly from this Github page by clicking “Download Zip”. 
+2. wxgenR functions are ready to run after loading into your R environment. Sample data is included with package. 

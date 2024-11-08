@@ -7,3 +7,4 @@ Data for training should be a single time series but can originate from station 
 # To get started
 1. To obtain wxgenR: either download from CRAN (https://cran.r-project.org/web/packages/wxgenR/index.html) or download R code directly from this Github page by clicking “Download Zip”. 
 2. wxgenR functions are ready to run after loading into your R environment. Sample data is included with package. 
+3. Examples for using wxgenR are contained in https://github.com/dwoodson-usbr/wxgenR/tree/master/vignettes.

@@ -9,9 +9,7 @@ library(wxgenR)
 library(lubridate)
 library(dplyr)
 library(tidyr)
-library(reshape2)
 library(ggpubr)
-library(data.table)
 library(moments)
 library(seas)
 
@@ -19,7 +17,7 @@ data(BlacksburgVA)
 
 # head(BlacksburgVA)
 
-## ---- results='hide'----------------------------------------------------------
+## ----results='hide'-----------------------------------------------------------
 nsim = 5   #number of simulation years
 nrealz = 2 #number of traces in ensemble
 
@@ -109,7 +107,7 @@ for (irealz in 1:nrealz){
 
 ## -----------------------------------------------------------------------------
 
-# df = sim.pcp
+df = sim.pcp
 
 formatting = function(df){
   
@@ -133,7 +131,9 @@ formatting = function(df){
     mutate(yday = as.numeric(yday(Date)),
            week = as.numeric(week(Date))) %>%
     relocate(c(Date,yday,week), .after = day) %>%
-    reshape2::melt(id = 1:6)
+    pivot_longer(cols = starts_with("Trace_"), 
+                 names_to = "variable", 
+                 values_to = "value")
     
   return(df)
 }
@@ -152,9 +152,9 @@ obs.tmp = dat.d[,c(1:3,8:9,11,5)]
 
 ## -----------------------------------------------------------------------------
 #plot simulated daily data
-# simDat = sim.tmp
-# obsDat = obs.tmp
-# Tag = "Temp"
+simDat = sim.tmp
+obsDat = obs.tmp
+Tag = "Temp"
 
 dailyPlot = function(simDat, obsDat, Tag){
   
@@ -231,76 +231,88 @@ dailyPlot = function(simDat, obsDat, Tag){
   
   #daily mean
   p1 = ggplot(df.comb) +
-  geom_ribbon(aes(x = yday, ymin = mean_q5, ymax = mean_q95), alpha = 0.25) +
-  geom_line(aes(x = yday, y = mean_med, color = "red"), size = 1, alpha = 0.8) +
-  geom_line(aes(x = yday, y = obs_mean), size = 0.3, alpha = trnAlpha, linetype = "solid", color = "blue") +
-  geom_point(aes(x = yday, y = obs_mean), size = 0.6, alpha = trnAlpha, color = "blue") +
-  scale_colour_manual(values =c('blue'='blue','red'='red', 'grey' = 'grey'), labels = c('Training Data','Simulation Median', '95% Confidence')) +
-  theme_classic() +
-  theme(axis.title = element_text(face = "bold"),
-        # text=element_text(size=14),
-        panel.grid.major = element_line(),
-        legend.title=element_blank(),
-        legend.position = lgdLoc,
-        legend.background = element_blank(),
-        legend.box.background = element_blank(),
-        legend.key = element_blank()) +
-  xlab("Day of Year") + ylab(paste0("Mean ", yLabel, units))   
+    geom_ribbon(aes(x = yday, ymin = mean_q5, ymax = mean_q95, fill = "95% Confidence"), alpha = 0.25) +
+    geom_line(aes(x = yday, y = mean_med, color = "Simulation Median"), size = 1, alpha = 0.8) +
+    geom_line(aes(x = yday, y = obs_mean, color = "Training Data"), size = 0.3, alpha = trnAlpha, linetype = "solid") +
+    geom_point(aes(x = yday, y = obs_mean, color = "Training Data"), size = 0.6, alpha = trnAlpha) +
+    
+    # Corrected scale_colour_manual()
+    scale_colour_manual(values = c("Training Data" = "blue", "Simulation Median" = "red")) +
+    
+    # Ensure fill is mapped for the ribbon
+    scale_fill_manual(values = c("95% Confidence" = "grey")) +
+  
+    theme_classic() +
+    theme(axis.title = element_text(face = "bold"),
+          panel.grid.major = element_line(),
+          legend.title = element_blank(),
+          legend.position = lgdLoc,
+          legend.background = element_blank(),
+          legend.box.background = element_blank(),
+          legend.key = element_blank()) +
+    xlab("Day of Year") + ylab(paste0("Mean ", yLabel, units))
   
   #daily SD
   p2 = ggplot(df.comb) +
-  geom_ribbon(aes(x = yday, ymin = sd_q5, ymax = sd_q95), alpha = 0.25) +
-  geom_line(aes(x = yday, y = sd_med, color = "red"), size = 1, alpha = 0.8) +
-  geom_line(aes(x = yday, y = obs_sd), size = 0.3, alpha = trnAlpha, linetype = "solid", color = "blue") +
-  geom_point(aes(x = yday, y = obs_sd), size = 0.6, alpha = trnAlpha, color = "blue") +
-  scale_colour_manual(values =c('blue'='blue','red'='red', 'grey' = 'grey'), labels = c('Training Data','Simulation Median', '95% Confidence')) +
-  theme_classic() +
-  theme(axis.title = element_text(face = "bold"),
-        # text=element_text(size=14),
-        panel.grid.major = element_line(),
-        legend.title=element_blank(),
-        legend.position = lgdLoc,
-        legend.background = element_blank(),
-        legend.box.background = element_blank(),
-        legend.key = element_blank()) +
-  xlab("Day of Year") + ylab(paste0("Std. Deviation of ", yLabel, units))   
+    geom_ribbon(aes(x = yday, ymin = sd_q5, ymax = sd_q95, fill = "95% Confidence"), alpha = 0.25) +
+    geom_line(aes(x = yday, y = sd_med, color = "Simulation Median"), size = 1, alpha = 0.8) +
+    geom_line(aes(x = yday, y = obs_sd, color = "Training Data"), size = 0.3, alpha = trnAlpha, linetype = "solid") +
+    geom_point(aes(x = yday, y = obs_sd, color = "Training Data"), size = 0.6, alpha = trnAlpha) +
   
+    scale_colour_manual(values = c("Training Data" = "blue", "Simulation Median" = "red")) +
+    scale_fill_manual(values = c("95% Confidence" = "grey")) +
+  
+    theme_classic() +
+    theme(axis.title = element_text(face = "bold"),
+          panel.grid.major = element_line(),
+          legend.title = element_blank(),
+          legend.position = lgdLoc,
+          legend.background = element_blank(),
+          legend.box.background = element_blank(),
+          legend.key = element_blank()) +
+    xlab("Day of Year") + ylab(paste0("Std. Deviation of ", yLabel, units))
+
   #daily skew
   p3 = ggplot(df.comb) +
-  geom_ribbon(aes(x = yday, ymin = skew_q5, ymax = skew_q95), alpha = 0.25) +
-  geom_line(aes(x = yday, y = skew_med, color = "red"), size = 1, alpha = 0.8) +
-  geom_line(aes(x = yday, y = obs_skew), size = 0.3, alpha = trnAlpha, linetype = "solid", color = "blue") +
-  geom_point(aes(x = yday, y = obs_skew), size = 0.6, alpha = trnAlpha, color = "blue") +
-  scale_colour_manual(values =c('blue'='blue','red'='red', 'grey' = 'grey'), labels = c('Training Data','Simulation Median', '95% Confidence')) +
-  theme_classic() +
-  theme(axis.title = element_text(face = "bold"),
-        # text=element_text(size=14),
-        panel.grid.major = element_line(),
-        legend.title=element_blank(),
-        legend.position = lgdLoc,
-        legend.background = element_blank(),
-        legend.box.background = element_blank(),
-        legend.key = element_blank()) +
-  xlab("Day of Year") + ylab(paste0("Skew of ", yLabel, " (-)"))  
+    geom_ribbon(aes(x = yday, ymin = skew_q5, ymax = skew_q95, fill = "95% Confidence"), alpha = 0.25) +
+    geom_line(aes(x = yday, y = skew_med, color = "Simulation Median"), size = 1, alpha = 0.8) +
+    geom_line(aes(x = yday, y = obs_skew, color = "Training Data"), size = 0.3, alpha = trnAlpha, linetype = "solid") +
+    geom_point(aes(x = yday, y = obs_skew, color = "Training Data"), size = 0.6, alpha = trnAlpha) +
+  
+    scale_colour_manual(values = c("Training Data" = "blue", "Simulation Median" = "red")) +
+    scale_fill_manual(values = c("95% Confidence" = "grey")) +
+  
+    theme_classic() +
+    theme(axis.title = element_text(face = "bold"),
+          panel.grid.major = element_line(),
+          legend.title = element_blank(),
+          legend.position = lgdLoc,
+          legend.background = element_blank(),
+          legend.box.background = element_blank(),
+          legend.key = element_blank()) +
+    xlab("Day of Year") + ylab(paste0("Skew of ", yLabel, " (-)"))
+
     
   
   #daily Max
   p4 = ggplot(df.comb) +
-  geom_ribbon(aes(x = yday, ymin = max_q5, ymax = max_q95), alpha = 0.25) +
-  geom_line(aes(x = yday, y = max_med, color = "red"), size = 1, alpha = 0.8) +
-  geom_line(aes(x = yday, y = obs_max), size = 0.3, alpha = trnAlpha, linetype = "solid", color = "blue") +
-  geom_point(aes(x = yday, y = obs_max), size = 0.6, alpha = trnAlpha, color = "blue") +
-  scale_colour_manual(values =c('blue'='blue','red'='red', 'grey' = 'grey'), labels = c('Training Data','Simulation Median', '95% Confidence')) +
-  theme_classic() +
-  theme(axis.title = element_text(face = "bold"),
-        # text=element_text(size=14),
-        panel.grid.major = element_line(),
-        legend.title=element_blank(),
-        legend.position = lgdLoc,
-        legend.background = element_blank(),
-        legend.box.background = element_blank(),
-        legend.key = element_blank()) +
-  xlab("Day of Year") + ylab(paste0("Maximum ", yLabel, units))  
+    geom_ribbon(aes(x = yday, ymin = max_q5, ymax = max_q95, fill = "95% Confidence"), alpha = 0.25) +
+    geom_line(aes(x = yday, y = max_med, color = "Simulation Median"), size = 1, alpha = 0.8) +
+    geom_line(aes(x = yday, y = obs_max, color = "Training Data"), size = 0.3, alpha = trnAlpha, linetype = "solid") +
+    geom_point(aes(x = yday, y = obs_max, color = "Training Data"), size = 0.6, alpha = trnAlpha) +
+  
+    scale_colour_manual(values = c("Training Data" = "blue", "Simulation Median" = "red")) +
+    scale_fill_manual(values = c("95% Confidence" = "grey")) +
+  
+    theme_classic() +
+    theme(axis.title = element_text(face = "bold"),
+          panel.grid.major = element_line(),
+          legend.title = element_blank(),
+          legend.position = lgdLoc,
+          legend.background = element_blank(),
+          legend.box.background = element_blank(),
+          legend.key = element_blank()) +
+    xlab("Day of Year") + ylab(paste0("Maximum ", yLabel, units))
   
   p.comb = ggarrange(p1, p2, p3, p4, nrow = 2, ncol = 2, common.legend = TRUE, legend = "bottom")
   
@@ -312,10 +324,10 @@ dailyPlot = function(simDat, obsDat, Tag){
 }
 
 
-## ---- fig.width=8, fig.height=8-----------------------------------------------
+## ----fig.width=8, fig.height=8------------------------------------------------
 dailyPlot(sim.pcp, obs.pcp, "Precip")
 
-## ---- fig.width=8, fig.height=8-----------------------------------------------
+## ----fig.width=8, fig.height=8------------------------------------------------
 dailyPlot(sim.tmp, obs.tmp, "Temp")
 
 ## -----------------------------------------------------------------------------
@@ -531,10 +543,10 @@ monthlyPlot = function(simDat, obsDat, Tag){
 }
 
 
-## ---- fig.width=8, fig.height=8-----------------------------------------------
+## ----fig.width=8, fig.height=8------------------------------------------------
 monthlyPlot(sim.pcp, obs.pcp, "Precip")
 
-## ---- fig.width=8, fig.height=8-----------------------------------------------
+## ----fig.width=8, fig.height=8------------------------------------------------
 monthlyPlot(sim.tmp, obs.tmp, "Temp")
 
 ## -----------------------------------------------------------------------------
@@ -750,10 +762,10 @@ weeklyPlot = function(simDat, obsDat, Tag){
 }
 
 
-## ---- fig.width=10, fig.height=8----------------------------------------------
+## ----fig.width=10, fig.height=8-----------------------------------------------
 # weeklyPlot(sim.pcp, obs.pcp, "Precip")
 
-## ---- fig.width=10, fig.height=8----------------------------------------------
+## ----fig.width=10, fig.height=8-----------------------------------------------
 # weeklyPlot(sim.tmp, obs.tmp, "Temp")
 
 ## -----------------------------------------------------------------------------

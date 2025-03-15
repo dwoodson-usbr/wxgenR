@@ -12,6 +12,7 @@
 #' @param Xseas Simulation season index from simTPocc function
 #' @param ekflag Simulate outside historical envelope?
 #' @param numbCores Enable parallel computing for precipitation simulation, set number of cores to enable (must be a positive integer greater than or equal to 2). Turned off by default; if set to 0 or 1 it will run as single thread. Use function 'detectCores()' from 'parallel' package to show the number of available cores on your machine.
+#' @param aseed Specify a seed for reproducibility.
 #'
 # @import lubridate
 # @import parallel
@@ -23,7 +24,7 @@
 #' @noRd
 #'
 
-"simPamt" <- function(dat.d,syr,eyr,smo,emo,sdate,edate,wwidth,nsim,nrealz,Xjday,Xseas,ekflag,awinFlag,numbCores,traceThreshold){
+"simPamt" <- function(dat.d,syr,eyr,smo,emo,sdate,edate,wwidth,nsim,nrealz,Xjday,Xseas,ekflag,awinFlag,numbCores,traceThreshold,aseed){
 
   if (is.null(numbCores) || !is.numeric(numbCores) || numbCores < 2) {
     numbCores = 1
@@ -112,7 +113,7 @@
 
       diwprcp[jday] = length(pamt)
       logpamt <- log(pamt)                #log-transformed precipitation amount vector
-      bSJ[jday] = hsj(logpamt)          #Sheather-Jones plug-in bandwidth
+      bSJ[jday] = sm::hsj(logpamt)          #Sheather-Jones plug-in bandwidth
 
     } #jday
   } #ekflag
@@ -138,7 +139,10 @@
     # startTime <- Sys.time() #benchmark run time
 
     irealz = 1
-    result <- foreach(irealz=1:nrealz, .packages='foreach', .export=c('repan', 'getDatesInWindow')) %dopar% {
+    # result <- foreach(irealz=1:nrealz, .export=c('repan', 'getDatesInWindow')) %dopar% {
+    result <- foreach(irealz=1:nrealz, .export=c('repan', 'getDatesInWindow'),
+                      .options.RNG = if (exists("aseed")) aseed else NULL) %dorng% {
+
     # for (irelz in 1:nrealz){
 
       message(paste0("-- Starting trace number ", irealz, " --"))

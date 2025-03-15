@@ -1,10 +1,15 @@
 #' \code{wxgenR} package
 #'
-#' A weather generator with seasonality
+#' wxgenR: A weather generator with seasonality
 #'
+#' This package provides functions for weather generation that incorporate seasonality.
 #'
-#' @docType package
 #' @name wxgenR
+NULL
+
+#' @keywords internal
+"_PACKAGE"
+
 #'
 #' @rawNamespace import(stats, except = filter)
 #' @import lubridate
@@ -17,6 +22,7 @@
 #' @import utils
 #' @importFrom plyr ddply
 #' @import magrittr
+#' @import doRNG
 #'
 #'
 #'

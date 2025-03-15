@@ -16,7 +16,7 @@ wx(
   wwidth,
   unitSystem,
   ekflag,
-  awinFlag,
+  awinFlag = FALSE,
   tempPerturb,
   pcpOccFlag = FALSE,
   traceThreshold = 0.005,
@@ -87,15 +87,16 @@ Your input/training data MUST have the following variables,
  in this order: year, month, day, prcp, temp, season. These variables are case sensitive
  and must be spelled as specified here.\cr
  \cr
- Your training data should start at the beginning of the calendar year (January 1) as the
- weather simulator is designed for the full calendar year.\cr
+ Your training data must be a temporally complete time series (i.e., the time series includes all expected timestamps, even if data is missing).
+ The training data is expected by default to start at the beginning of the calendar year (January 1) but custom year definitions (e.g., water years)
+ can be set using the 'smo' and 'emo' arguments to define start and end months, respectively.\cr
+ \cr
  Use starting- and ending- years to subset your input data if desired;
  otherwise starting and ending dates will default to the beginning and end of your dataset.\cr
  \cr
 Using 'ekflag = T' will generate simulations outside of the historical envelope
 via an Epanechnikov kernel. For more details on the Epanechnikov kernel and its use
 in a weather generator, see Rajagopalan et al. (1996).\cr
-\cr
  \cr
  Leap years may be included in the simulated weather if they are included in your training data,
  so non-leap years include a row of 'NA' values at the end of the calendar year as a book-keeping

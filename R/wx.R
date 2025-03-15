@@ -6,15 +6,16 @@
 #'  in this order: year, month, day, prcp, temp, season. These variables are case sensitive
 #'  and must be spelled as specified here.\cr
 #'  \cr
-#'  Your training data should start at the beginning of the calendar year (January 1) as the
-#'  weather simulator is designed for the full calendar year.\cr
+#'  Your training data must be a temporally complete time series (i.e., the time series includes all expected timestamps, even if data is missing).
+#'  The training data is expected by default to start at the beginning of the calendar year (January 1) but custom year definitions (e.g., water years)
+#'  can be set using the 'smo' and 'emo' arguments to define start and end months, respectively.\cr
+#'  \cr
 #'  Use starting- and ending- years to subset your input data if desired;
 #'  otherwise starting and ending dates will default to the beginning and end of your dataset.\cr
 #'  \cr
 #' Using 'ekflag = T' will generate simulations outside of the historical envelope
 #' via an Epanechnikov kernel. For more details on the Epanechnikov kernel and its use
 #' in a weather generator, see Rajagopalan et al. (1996).\cr
-#' \cr
 #'  \cr
 #'  Leap years may be included in the simulated weather if they are included in your training data,
 #'  so non-leap years include a row of 'NA' values at the end of the calendar year as a book-keeping
@@ -104,7 +105,7 @@
 #'
 "wx" <- function(trainingData, syr = NULL, eyr = NULL, smo = NULL, emo = NULL,
                  nsim, nrealz, aseed, wwidth, unitSystem,
-                 ekflag, awinFlag, tempPerturb, pcpOccFlag = FALSE,
+                 ekflag, awinFlag = FALSE, tempPerturb, pcpOccFlag = FALSE,
                  traceThreshold = 0.005, numbCores = NULL
                 ){
   #weather generator
@@ -148,7 +149,7 @@
   #simulate precipitation amount
   message("...Simulate precipitation amount...")
   wwidth = as.numeric(wwidth)
-  z <- simPamt(dat.d,syr,eyr,smo,emo,sdate,edate,wwidth,nsim,nrealz,Xjday,Xseas,ekflag,awinFlag,numbCores,traceThreshold)
+  z <- simPamt(dat.d,syr,eyr,smo,emo,sdate,edate,wwidth,nsim,nrealz,Xjday,Xseas,ekflag,awinFlag,numbCores,traceThreshold,aseed)
   Xpamt <- z$Xpamt
   Xpdate <- z$Xpdate
   if (ekflag) bSJ <- z$bSJ
@@ -162,6 +163,7 @@
     #observed
     dat.d$prcp = dat.d$prcp*25.4 #inches to mm
     dat.d$temp = (dat.d$temp-32)*(5/9) #deg F to deg C
+    dat.d$tavgm = (dat.d$tavgm-32)*(5/9) #deg F to deg C
   }
 
   #default

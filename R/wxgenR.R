@@ -13,7 +13,7 @@ NULL
 #'
 #' @rawNamespace import(stats, except = filter)
 #' @import lubridate
-#' @importFrom dplyr group_by summarise left_join glimpse mutate relocate if_else filter
+#' @importFrom dplyr group_by summarise left_join glimpse mutate relocate if_else filter select
 #' @import msm
 #' @import parallel
 #' @import doParallel
@@ -23,7 +23,8 @@ NULL
 #' @importFrom plyr ddply
 #' @import magrittr
 #' @import doRNG
-#'
+#' @import mc2d
+#' @import qmap
 #'
 #'
 NULL

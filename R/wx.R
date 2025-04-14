@@ -57,7 +57,7 @@
 #' Simulated daily temperature uses concurrent daily precipitation occurrence as a variable if enabled. By default, this is turned off.
 #' @param traceThreshold Threshold for determining whether precipitation depth is considered a trace amount or not. Precipitation depths below this value will be considered trace amounts and will not be used for simulation. A default value of 0.005-inches is used based on National Weather Service guidance. If using a custom trace depth, ensure that it is in the same unit system as your training data and specified by the `unitSystem` flag.
 #' @param numbCores Enable parallel computing for precipitation simulation, set number of cores to enable (must be a positive integer greater than or equal to 2). Turned off by default; if set to 0 or 1 it will run as single thread. Use function 'detectCores()' from 'parallel' package to show the number of available cores on your machine.
-#'
+#' @param returnTempModel Optional flag to return the fitted linear model for daily temperature simulation along with simulation results. Enable by setting TRUE (FALSE by default).
 #'
 #' @return Returns a list containing both inputs to the weather generator as well as outputs.
 #' \itemize{
@@ -106,7 +106,7 @@
 "wx" <- function(trainingData, syr = NULL, eyr = NULL, smo = NULL, emo = NULL,
                  nsim, nrealz, aseed, wwidth, unitSystem,
                  ekflag, awinFlag = FALSE, tempPerturb, pcpOccFlag = FALSE,
-                 traceThreshold = 0.005, numbCores = NULL
+                 traceThreshold = 0.005, numbCores = NULL, returnTempModel = F
                 ){
   #weather generator
   #
@@ -132,10 +132,10 @@
   tpm.y <- getPtpm(dat.d, traceThreshold)$tpm.y
   #
   #calculate parameters for temperature simulation
-  z <- getTpars(dat.d, pcpOccFlag, traceThreshold, smo, emo)
-  dat.d=z$dat.d     #updated with tavgm, sine and cosine terms
-  coeftmp=z$coeftmp
-  tmp.sd=z$tmp.sd
+  z.t <- getTpars(dat.d, pcpOccFlag, traceThreshold, smo, emo, returnTempModel)
+  dat.d=z.t$dat.d     #updated with tavgm, sine and cosine terms
+  coeftmp=z.t$coeftmp
+  tmp.sd=z.t$tmp.sd
   #
   #simulate precipitation occurrence and temperature
   message("...Simulate precipitation occurrence and temperature...")
@@ -170,7 +170,19 @@
   olist=list("dat.d"=dat.d,"simyr1"=simyr1,"X"=X,"Xseas"=Xseas,
              "Xpdate"=Xpdate,"Xpamt"=Xpamt,"Xtemp"=Xtemp
             )
-  if (ekflag) olist=c(olist)
+
+  # if (ekflag) olist=c(olist)
+
+  if(returnTempModel == F){
+    olist=list("dat.d"=dat.d,"simyr1"=simyr1,"X"=X,"Xseas"=Xseas,
+               "Xpdate"=Xpdate,"Xpamt"=Xpamt,"Xtemp"=Xtemp
+    )
+  }else{
+    olist=list("dat.d"=dat.d,"simyr1"=simyr1,"X"=X,"Xseas"=Xseas,
+               "Xpdate"=Xpdate,"Xpamt"=Xpamt,"Xtemp"=Xtemp,"tmp.mod" = z.t$tmp.mod
+    )
+  }
+
   return(olist)
 } #end function
 

@@ -20,7 +20,8 @@ wx(
   tempPerturb,
   pcpOccFlag = FALSE,
   traceThreshold = 0.005,
-  numbCores = NULL
+  numbCores = NULL,
+  returnTempModel = F
 )
 }
 \arguments{
@@ -67,6 +68,8 @@ Simulated daily temperature uses concurrent daily precipitation occurrence as a 
 \item{traceThreshold}{Threshold for determining whether precipitation depth is considered a trace amount or not. Precipitation depths below this value will be considered trace amounts and will not be used for simulation. A default value of 0.005-inches is used based on National Weather Service guidance. If using a custom trace depth, ensure that it is in the same unit system as your training data and specified by the `unitSystem` flag.}
 
 \item{numbCores}{Enable parallel computing for precipitation simulation, set number of cores to enable (must be a positive integer greater than or equal to 2). Turned off by default; if set to 0 or 1 it will run as single thread. Use function 'detectCores()' from 'parallel' package to show the number of available cores on your machine.}
+
+\item{returnTempModel}{Optional flag to return the fitted linear model for daily temperature simulation along with simulation results. Enable by setting TRUE (FALSE by default).}
 }
 \value{
 Returns a list containing both inputs to the weather generator as well as outputs.

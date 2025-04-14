@@ -16,7 +16,7 @@
 #' @noRd
 #'
 
-"getTpars" <- function(dat.d, pcpOccFlag, traceThreshold, smo, emo){
+"getTpars" <- function(dat.d, pcpOccFlag, traceThreshold, smo, emo, returnTempModel = F){
   #calculate paramters for temperature simulation
   #
   # require("plyr")
@@ -90,7 +90,11 @@
   for(i in 1:12) tmp.sd[i] <- sd(z.tmp.res[mo.d==i],na.rm=T)
   #
   #default
-  olist=list("dat.d"=dat.d,"coeftmp"=coeftmp,"tmp.sd"=tmp.sd)
+  if(returnTempModel == F){
+    olist=list("dat.d"=dat.d,"coeftmp"=coeftmp,"tmp.sd"=tmp.sd)
+  } else{
+    olist=list("dat.d"=dat.d,"coeftmp"=coeftmp,"tmp.sd"=tmp.sd, tmp.mod = z.tmp)
+  }
   return(olist)
 } #end function
 

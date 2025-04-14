@@ -1,0 +1,1000 @@
+---
+title: "wxgenR - Multisite shuffling and generation of max/min daily temperatures"
+author: "Subhrendu Gangopadhyay, Lindsay Bearup, Andrew Verdin, Eylon Shamir, Eve Halper, Marketa McGuire, David Woodson"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{wxgenR - Multisite shuffling and generation of max/min daily temperatures}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+
+rm(list=ls())
+
+library(tigris)
+library(FedData)
+library(wxgenR)
+library(tidyr)
+
+library(terra)
+library(stringr)
+library(mapview)
+library(dplyr)
+library(ggplot2)
+library(xts)
+library(tigris)
+library(lubridate)
+library(readxl)
+library(sf)
+library(lfstat)
+library(magrittr)
+
+library(foreach)
+library(doParallel)
+library(doRNG)
+library(parallel)
+library(mc2d)
+
+library(qmap)
+
+library(ggspatial)
+library(shadowtext)  # for halo text
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(cowplot)     # for inset map
+library(tigris)
+options(tigris_use_cache = TRUE)
+```
+
+```{r}
+county = counties(state = "Colorado")
+
+BOCO = subset(county, NAME == "Boulder")$geometry
+
+plot(BOCO)
+
+```
+
+```{r}
+metDat = get_ghcn_daily(template = BOCO, label = "BOCO", elements = c("PRCP", "TMAX", "TMIN", "TAVG"), extraction.dir = "C:/Users/dwoodson/OneDrive - DOI/Documents/Projects/weatherGen/paper code/BOCO_data", years = 1991:2020, force.redo = F)
+```
+
+```{r}
+plot(BOCO)
+plot(metDat$spatial$geometry, add = T, labels = metDat$spatial$ID)
+text(metDat$spatial$geometry, metDat$spatial$ID, cex = 0.6, pos = 3)
+```
+
+```{r}
+# Convert BOCO and station data to sf
+BOCO_sf = st_as_sf(BOCO)
+stations_sf = st_as_sf(metDat$spatial)
+# stations_sf$label = as.character(seq_len(nrow(stations_sf)))
+
+stations_sf = stations_sf %>%
+  mutate(label = case_when(
+    ID == "USS0005J42S" ~ "1",   # Niwot
+    ID == "USC00050848" ~ "2",   # Boulder
+    TRUE ~ NA_character_
+  ))
+
+# Fill in remaining labels (continuing sequence from 3)
+missing_labels = which(is.na(stations_sf$label))
+stations_sf$label[missing_labels] = as.character(seq(3, 2 + length(missing_labels)))
+
+```
+
+```{r}
+dem = rast("C:/Users/dwoodson/OneDrive - DOI/2026 SECURE Report/West-Wide Assessment/data/DEM/GMTED/mosaic_WUS_v4.tif")*3.28
+```
+
+```{r}
+states = states(cb = TRUE, year = 2022)
+
+# Filter for the Lower 48
+excluded_states = c("AK", "HI", "VI", "PR", "GU", "AS", "MP")
+lower48 = states[!states$STUSPS %in% excluded_states, ]
+colorado = lower48[lower48$STUSPS == "CO", ]
+```
+
+```{r}
+# Define bounding box for western U.S.
+west_bbox = c(xmin = -125, xmax = -100, ymin = 30, ymax = 50)
+
+# Convert bbox to an sf object
+west_box_sf = st_as_sfc(st_bbox(west_bbox, crs = st_crs(states)))
+
+# Crop the lower 48 states to that bounding box
+western_states = st_crop(lower48, west_box_sf)
+colorado_west = st_crop(colorado, west_box_sf)
+boco_west = st_crop(BOCO_sf, west_box_sf)
+
+```
+
+```{r}
+# Create a buffered extent (e.g., 5% larger on each side)
+buffer_factor = 0.05
+boco_ext = st_bbox(BOCO_sf)
+
+xrange = boco_ext$xmax - boco_ext$xmin
+yrange = boco_ext$ymax - boco_ext$ymin
+
+buffered_ext = c(
+  xmin = boco_ext$xmin - buffer_factor * xrange,
+  xmax = boco_ext$xmax + buffer_factor * xrange,
+  ymin = boco_ext$ymin - buffer_factor * yrange,
+  ymax = boco_ext$ymax + buffer_factor * yrange
+)
+
+# Crop the DEM to buffered extent
+dem_buffered = crop(dem, ext(buffered_ext))
+dem_df = as.data.frame(dem_buffered, xy = TRUE, na.rm = TRUE)
+colnames(dem_df)[3] = "elevation"
+```
+
+```{r}
+plot(dem_buffered)
+plot(BOCO, add = TRUE)
+plot(metDat$spatial$geometry, add = TRUE, pch = 16, alpha = 0.5)
+text(metDat$spatial$geometry, labels = metDat$spatial$ID, cex = 0.6, pos = 3)
+
+```
+
+```{r}
+main_map = ggplot() +
+  geom_raster(data = dem_df, aes(x = x, y = y, fill = elevation)) +
+  geom_sf(data = BOCO_sf, fill = NA, color = "purple", linewidth = 0.8, alpha = 0.8) +  # change from red
+  geom_sf(data = stations_sf, shape = 21, fill = "red", color = "black", size = 3) +     # larger points
+  geom_shadowtext(data = stations_sf,
+                  aes(geometry = geometry, label = label),
+                  stat = "sf_coordinates",
+                  size = 4.5, 
+                  bg.color = "white",
+                  bg.r = 0.15,
+                  bg.alpha = 0.5,
+                  color = "black",
+                  vjust = -1
+  ) +
+  scale_fill_viridis_c() +
+  theme_minimal() +
+  theme(
+    axis.title = element_blank(),
+    legend.position = "right",
+    plot.background = element_rect(fill = "white", color = NA)
+  ) +
+  labs(fill = "Elevation (ft)") +
+  #scale bar
+  annotation_scale(
+    location = "tr",
+    width_hint = 0.15,
+    style = "bar",                       # Bar style
+    bar_cols = c("white", "black"),     # Black and white alternating bars
+    text_cex = 0.6,                      # Slightly smaller text
+    pad_x = unit(0.1, "in"),
+    pad_y = unit(0.01, "in"),
+    unit_category = "imperial"
+  ) +
+    # North arrow
+  annotation_north_arrow(
+    location = "tl",
+    which_north = "true",
+    pad_x = unit(-0.1, "in"),
+    pad_y = unit(0.01, "in"),
+    style = north_arrow_fancy_orienteering
+  )
+
+# main_map = ggplot() +
+#   geom_raster(data = dem_df, aes(x = x, y = y, fill = elevation)) +
+#   geom_sf(data = BOCO_sf, fill = NA, color = "black", linewidth = 0.6, alpha = 0.75) +
+#   geom_sf(data = stations_sf, shape = 21, fill = "red", color = "black", alpha = 0.75, size = 2) +
+#   geom_shadowtext(data = stations_sf,
+#                   aes(geometry = geometry, label = ID),
+#                   stat = "sf_coordinates",
+#                   size = 2.5, 
+#                   bg.color = "white",
+#                   bg.r = 0.15,         # smaller radius for thinner halo
+#                   bg.alpha = 0.5,      # add some transparency
+#                   color = "black",      # ensure the text is black
+#                   vjust = -1
+#                   ) +
+#   scale_fill_viridis_c() +
+#   theme_minimal() +
+#   theme(
+#     axis.title = element_blank(),  # remove x and y axis titles
+#     legend.position = "right",
+#     plot.background = element_rect(fill = "white", color = NA)    # Entire plot
+#   ) +
+#   labs(fill = "Elevation (ft)") 
+#   # annotation_scale(location = "bl", plot_unit = "mi", width_hint = 0.2) +
+#   # annotation_north_arrow(location = "tl", which_north = "true", style = north_arrow_fancy_orienteering)
+
+```
+
+```{r}
+# inset_map = ggplot() +
+#   geom_sf(data = lower48, fill = "grey90", color = "white") +
+#   geom_sf(data = colorado, fill = "white", color = "black", linewidth = 0.5) +
+#   geom_sf(data = BOCO_sf, fill = "red", color = "black", linewidth = 0.5) +
+#   theme_void()
+
+# Identify neighboring states
+co_neighbors = st_touches(colorado, lower48, sparse = FALSE)[1,]
+neighbor_states = lower48[co_neighbors, ]
+
+# Remove NE, KS, OK
+excluded_inset = c("NE", "KS", "OK")
+neighbor_states = neighbor_states[!neighbor_states$STUSPS %in% excluded_inset, ]
+
+# Combine Colorado with filtered neighbors
+co_region = rbind(colorado, neighbor_states)
+
+# Add centroids for abbreviations
+co_region$abbr = co_region$STUSPS
+co_region_centroids = st_centroid(co_region)
+
+# Inset map
+inset_map = ggplot() +
+  geom_sf(data = co_region, fill = "grey90", color = "white") +
+  geom_sf(data = colorado, fill = "white", color = "black", linewidth = 0.8) +
+  geom_sf(data = BOCO_sf, fill = "white", color = "purple", linewidth = 0.5) +
+  geom_text(data = st_coordinates(co_region_centroids) %>%
+              as.data.frame() %>%
+              bind_cols(abbr = co_region$abbr),
+            aes(X, Y, label = abbr), size = 3.5) +  # slightly larger
+  theme_void()
+
+
+# inset_map = ggplot() +
+#   geom_sf(data = western_states, fill = "grey90", color = "white") +
+#   geom_sf(data = colorado_west, fill = "white", color = "black", linewidth = 0.5) +
+#   geom_sf(data = boco_west, fill = "red", color = "black", linewidth = 0) +
+#   theme_void()
+
+```
+
+```{r}
+# final_map = ggdraw() +
+#   draw_plot(main_map) +
+#   draw_plot(inset_map, x = 0.5, y = -0.2, width = 1, height = 1)
+
+
+final_map = ggdraw() +
+  draw_plot(main_map) +
+  draw_plot(inset_map, x = 0.425, y = 0.08, width = 0.6, height = 0.6)
+
+final_map
+
+ggsave("C:/Users/dwoodson/OneDrive - DOI/Documents/Projects/weatherGen/code/BoulderCounty/BOCO_map.png", final_map, dpi = 400)
+
+```
+```{r}
+# Extract elevation values for station locations from the DEM
+elev_values = terra::extract(dem, vect(stations_sf))
+
+# Add elevation values to the stations_sf
+stations_sf$elevation_ft = elev_values[, 2]  # column 1 is ID, column 2 is the value
+
+```
+
+
+```{r}
+# Extract lat/lon from geometry
+coords = st_coordinates(stations_sf)
+
+# Add lat/lon as columns
+stations_df = stations_sf %>%
+  st_drop_geometry() %>%
+  mutate(
+    lon = coords[, 1],
+    lat = coords[, 2]
+  )
+
+# Write to CSV
+write.csv(stations_df, "C:/Users/dwoodson/OneDrive - DOI/Documents/Projects/weatherGen/code/BoulderCounty/stationMetadata.csv", row.names = FALSE)
+
+```
+
+
+```{r}
+# writeVector(vect(metDat$spatial), filename = "C:/Users/dwoodson/OneDrive - DOI/Documents/Projects/weatherGen/code/BoulderCounty/BOCO_metStations.shp", overwrite = T)
+```
+
+```{r}
+dat = metDat$tabular[[1]]
+var = "PRCP"
+```
+
+```{r}
+
+wideToLong = function(dat, var){
+
+  dat.var = dat[[var]] %>%
+    # Convert all column names to lowercase
+    { colnames(.) = tolower(colnames(.)); . } %>%
+    # rename(station = STATION, year = YEAR, month = MONTH) %>%
+    pivot_longer(
+      cols = starts_with("d"),
+      names_to = "day",
+      values_to = "value"
+    ) %>%
+    mutate(
+      day = str_pad(str_replace(day, "d", ""), 2, side = "left", pad = "0"),
+      date = make_date(year, as.numeric(month), as.numeric(day)),
+      value = (value * 0.1), # Convert from tenths of unit to unit
+      tag = tolower(var)
+    ) %>%
+    filter(!is.na(date))  # Remove invalid dates
+
+  return(dat.var)
+
+}
+```
+
+```{r}
+stations = names(metDat$tabular)
+stations = stations[-2]
+
+list.sta = list()
+```
+
+```{r}
+sta = stations[1]
+for(sta in stations){
+
+  dat = metDat$tabular[[sta]]
+  
+  dat.prcp = wideToLong(dat, "PRCP")
+  dat.tmax = wideToLong(dat, "TMAX")
+  dat.tmin = wideToLong(dat, "TMIN")
+  
+  # Generate full date sequence
+  date_seq = data.frame(date = seq(from = as.Date("1991-01-01"), 
+                                   to = as.Date("2020-12-31"), 
+                                   by = "day")) %>%
+    mutate(
+      year = year(date),
+      month = month(date),
+      day = day(date),
+      season = case_when(
+        month %in% c(12, 1, 2) ~ 1,  # DJF
+        month %in% c(3, 4, 5) ~ 2,   # MAM
+        month %in% c(6, 7, 8) ~ 3,   # JJA
+        month %in% c(9, 10, 11) ~ 4  # SON
+      )
+    )
+  
+  df = bind_rows(dat.prcp, dat.tmax, dat.tmin) %>%
+    # select(station, date, tag, value) %>%
+    pivot_wider(names_from = tag, values_from = value) %>%
+    mutate(
+      year = year(date),
+      month = month(date),
+      day = day(date),
+      season = case_when(
+        month %in% c(12, 1, 2) ~ 1,  # DJF
+        month %in% c(3, 4, 5) ~ 2,   # MAM
+        month %in% c(6, 7, 8) ~ 3,   # JJA
+        month %in% c(9, 10, 11) ~ 4  # SON
+      ),
+      temp = (tmax + tmin) / 2
+      )
+  
+  # Merge with your dataset to ensure all days exist
+  df_complete = date_seq %>%
+    left_join(df, by = c("date", "year", "month", "day", "season")) %>%
+    arrange(date) %>%
+    dplyr::select(year, month, day, prcp, temp, season)
+  
+  # Check if missing values are retained
+  sum(is.na(df_complete$prcp)) # Should count missing precipitation
+  sum(is.na(df_complete$temp)) # Should count missing temperature
+  
+  list.sta[[sta]] = df_complete
+  
+  }
+```
+
+```{r}
+runSim = F
+if(runSim == T){
+  list.sta.wx = list()
+  
+  sta = stations[1]
+  for(sta in stations){
+    
+    df = data.frame(list.sta[[sta]])
+    
+    sta.wx = wx(df, nsim = 30, nrealz = 30, wwidth = 3, unitSystem = "Metric",
+                syr = 1991, eyr = 2020, smo = 1, emo = 12, aseed = 123,
+                awinFlag = F, ekflag = F, tempPerturb = F,
+                numbCores = detectCores()-2)
+    
+    list.sta.wx[[sta]] = sta.wx
+    
+  }
+
+  }else{
+    
+  list.sta.wx = readRDS(file = "C:/Users/dwoodson/OneDrive - DOI/Documents/Projects/weatherGen/data/multisite/BOCO_wxSims.Rds")
+
+  }
+```
+
+```{r}
+# list.sta.wx.sub = list.sta.wx[selSta]
+```
+
+```{r}
+# save(list.sta.wx.sub, file = "C:/Users/dwoodson/OneDrive - DOI/Documents/Projects/weatherGen/wxgenR_dev/wxgenR/data/BOCO_sims.rda")
+```
+
+```{r}
+ms_s = multisite_shuffle(list.sta.wx, numbCores = detectCores()-2, aseed = 123)
+```
+
+```{r}
+# Extract results
+df.shuff = ms_s$shuffledResultsOnly
+df.shuff.full = ms_s$shuffledResultsAndObs
+df.merge = ms_s$shuffledAndUnshuffled
+```
+
+```{r}
+selSta = c("USS0005J42S", "USC00050848")
+```
+
+```{r}
+df.merge$station = factor(df.merge$station, levels = c("USS0005J42S", "USC00050848", "USS0005J18S", "USS0005J08S", "USC00053629", "USS0005J41S"))
+```
+
+```{r}
+df.merge$prcp = df.merge$prcp/25.4
+df.merge$sim_prcp = df.merge$sim_prcp/25.4
+df.merge$temp = df.merge$temp*9/5+32
+df.merge$sim_temp = df.merge$sim_temp*9/5+32
+```
+
+
+```{r, fig.width=8, fig.height=6}
+p1 = ggplot(
+  subset(df.merge, simulation == "sim_1" & Tag == "Unshuffled" & year == 1991 & month == 4 & station %in% "USS0005J42S"), 
+            aes(x = date, y = prcp)) +
+  geom_point(data = subset(df.merge, simulation == "sim_1" & year == 1991 & month == 4 & station %in% "USS0005J42S"), 
+            aes(x = date, y = sim_prcp, color = Tag, group = simulation), alpha = 0.75, size = 1.5) +  # Move alpha outside aes()
+  geom_point(aes(color = "Observed"), alpha = 0.75, size = 1.5) +
+  scale_color_manual(values = c("Shuffled" = "purple", "Unshuffled" = "green", "Observed" = "black")) +
+  # geom_point(color = "black", size = 1) +  # Ensure the observed data is distinct
+  # facet_wrap(~station) +
+  labs(x = "Date", y = "Precipitation (in)", color = "Tag") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        axis.title = element_text(size = 12, face = "bold"),
+        axis.title.x = element_blank(),
+        legend.title = element_blank(),
+        legend.position = "top",
+        legend.direction = "horizontal",
+        ) +  # Rotate x-axis labels
+  guides(color = guide_legend(override.aes = list(size = 1.5, alpha = 1)))
+
+print(p1)
+
+ggsave("C:/Users/dwoodson/OneDrive - DOI/Documents/Projects/weatherGen/code/BoulderCounty/shuffle_results_oneMonth_precip.png", p1, dpi = 400)
+```
+
+```{r, fig.width=8, fig.height=6}
+p1 = ggplot(
+  subset(df.merge, simulation == "sim_1" & Tag == "Unshuffled" & year == 1991 & month == 4 & station %in% "USS0005J42S"),
+            aes(x = date, y = temp)) +
+  geom_point(data = subset(df.merge, simulation == "sim_1" & year == 1991 & month == 4 & station %in% "USS0005J42S"), 
+            aes(x = date, y = sim_temp, color = Tag, group = simulation), alpha = 0.75, size = 1.5) +  # Move alpha outside aes()
+  geom_point(aes(color = "Observed"), size = 1.5) +
+  scale_color_manual(values = c("Shuffled" = "purple", "Unshuffled" = "green", "Observed" = "black")) +
+  #facet_wrap(~station) +
+  labs(x = "Date", y = "Temperature (°F)", color = "Tag") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        axis.title = element_text(size = 12, face = "bold"),
+        axis.title.x = element_blank(),
+        legend.title = element_blank(),
+        legend.position = "top",
+        legend.direction = "horizontal",
+        ) +  # Rotate x-axis labels
+  guides(color = guide_legend(override.aes = list(size = 1.5, alpha = 1)))
+
+print(p1)
+
+ggsave("C:/Users/dwoodson/OneDrive - DOI/Documents/Projects/weatherGen/code/BoulderCounty/shuffle_results_oneMonth_temp.png", p1, dpi = 400)
+```
+
+```{r, fig.width=8, fig.height=6}
+# p1 = ggplot(subset(df.merge, simulation == "sim_1" & Tag == "Unshuffled" & year == 1991 & station %in% selSta), 
+
+p1 = ggplot(subset(df.merge, simulation == "sim_1" & Tag == "Unshuffled" & year == 1991 & station %in% "USS0005J42S"), 
+            aes(x = date, y = prcp)) +
+  geom_point(data = subset(df.merge, simulation == "sim_1" & year == 1991 & station %in% "USS0005J42S"), 
+            aes(x = date, y = sim_prcp, color = Tag, group = simulation), alpha = 0.75, size = 1.5) +
+  geom_point(aes(color = "Observed"), size = 1.5, alpha = 0.75) +
+  scale_color_manual(values = c("Shuffled" = "purple", "Unshuffled" = "green", "Observed" = "black")) + #facet_wrap(~station) +
+  labs(x = "Date", y = "Precipitation (in)", color = "Tag") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        axis.title = element_text(size = 12, face = "bold"),
+        axis.title.x = element_blank(),
+        legend.title = element_blank(),
+        legend.position = "top",
+        legend.direction = "horizontal",
+        ) +  # Rotate x-axis labels
+  guides(color = guide_legend(override.aes = list(size = 1.5, alpha = 1)))
+
+print(p1)
+
+ggsave("C:/Users/dwoodson/OneDrive - DOI/Documents/Projects/weatherGen/code/BoulderCounty/shuffle_results_oneYear_precip.png", p1, dpi = 400)
+```
+
+```{r, fig.width=8, fig.height=6}
+p1 = ggplot(subset(df.merge, simulation == "sim_1" & Tag == "Unshuffled" & year == 1991 & station %in% "USS0005J42S"), 
+            aes(x = date, y = temp)) +
+  geom_point(data = subset(df.merge, simulation == "sim_1" & year == 1991 & station %in% "USS0005J42S"), 
+            aes(x = date, y = sim_temp, color = Tag, group = simulation), alpha = 0.75, size = 1.5) +
+  geom_point(aes(color = "Observed"), size = 1.5, alpha = 0.75) +
+  scale_color_manual(values = c("Shuffled" = "purple", "Unshuffled" = "green", "Observed" = "black")) +  #facet_wrap(~station) +
+  labs(x = "Date", y = "Temperature (°F)", color = "Tag") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        axis.title = element_text(size = 12, face = "bold"),
+        axis.title.x = element_blank(),
+        legend.title = element_blank(),
+        legend.position = "top",
+        legend.direction = "horizontal",
+        ) +  # Rotate x-axis labels
+  guides(color = guide_legend(override.aes = list(size = 1.5, alpha = 1)))
+
+print(p1)
+
+ggsave("C:/Users/dwoodson/OneDrive - DOI/Documents/Projects/weatherGen/code/BoulderCounty/shuffle_results_oneYear_temp.png", p1, dpi = 400)
+```
+
+### plot low and high elevation stations
+```{r}
+df.merge.sel = df.merge %>%
+  filter(station %in% selSta) %>%
+  mutate(tmax = NA, tmin = NA)
+```
+
+```{r}
+list.sta.sel = list()
+df.merge.sel.tmxmn = NULL
+
+sta = selSta[1]
+for(sta in selSta){
+
+  dat = metDat$tabular[[sta]]
+  
+  dat.prcp = wideToLong(dat, "PRCP")
+  dat.tmax = wideToLong(dat, "TMAX")
+  dat.tmin = wideToLong(dat, "TMIN")
+  
+  # Generate full date sequence
+  date_seq = data.frame(date = seq(from = as.Date("1991-01-01"), 
+                                   to = as.Date("2020-12-31"), 
+                                   by = "day")) %>%
+    mutate(
+      year = year(date),
+      month = month(date),
+      day = day(date),
+      season = case_when(
+        month %in% c(12, 1, 2) ~ 1,  # DJF
+        month %in% c(3, 4, 5) ~ 2,   # MAM
+        month %in% c(6, 7, 8) ~ 3,   # JJA
+        month %in% c(9, 10, 11) ~ 4  # SON
+      )
+    )
+  
+  df = bind_rows(dat.prcp, dat.tmax, dat.tmin) %>%
+    # select(station, date, tag, value) %>%
+    pivot_wider(names_from = tag, values_from = value) %>%
+    mutate(
+      year = year(date),
+      month = month(date),
+      day = day(date),
+      season = case_when(
+        month %in% c(12, 1, 2) ~ 1,  # DJF
+        month %in% c(3, 4, 5) ~ 2,   # MAM
+        month %in% c(6, 7, 8) ~ 3,   # JJA
+        month %in% c(9, 10, 11) ~ 4  # SON
+      ),
+      tmax = tmax*9/5+32,
+      tmin = tmin*9/5+32,
+      temp = (tmax + tmin) / 2
+      )
+  
+  # Merge with your dataset to ensure all days exist
+  df_complete = date_seq %>%
+    left_join(df, by = c("date", "year", "month", "day", "season")) %>%
+    arrange(date) %>%
+    na.omit()
+  
+  # Check if missing values are retained
+  sum(is.na(df_complete$prcp)) # Should count missing precipitation
+  sum(is.na(df_complete$temp)) # Should count missing temperature
+  
+  df.merge.sel.sta = df.merge.sel %>%
+    filter(station == sta)
+  
+  sim_TmaxTmin = generate_TmaxTmin(df.train = df_complete, df.sim = df.merge.sel.sta)
+  
+  df.merge.sel.sta = sim_TmaxTmin$df.sim
+  
+  df.merge.sel.sta = df.merge.sel.sta %>%
+    left_join(df_complete %>% dplyr::select(date, station, tmax, tmin),
+                     by = c("date", "station")) %>%
+    dplyr::select(-tmax.x, -tmin.x) %>%
+    rename_with(~ c("tmax", "tmin"), c("tmax.y", "tmin.y"))
+
+  qmap.monthly = sim_TmaxTmin$qmap.monthly
+  # 
+  # mo = 1
+  # for(mo in 1:12){
+  #   
+  #   df.mo = df_complete %>%
+  #     filter(month == mo)
+  #   
+  #   qmap.fit = qmap.monthly[[mo]]
+  #   
+  #   df.merge.sel.sta = df.merge.sel.sta %>%
+  #     mutate(
+  #       tmax = ifelse(station == sta & month == mo, 
+  #                     doQmapQUANT(x = temp, fobj = qmap.fit, type = "linear"), tmax)
+  #       )
+  #   
+  # }
+  
+  # Store results
+  list.sta.sel[[sta]] = list(df_complete = df_complete, qmap.monthly = qmap.monthly)
+  df.merge.sel.tmxmn = bind_rows(df.merge.sel.tmxmn, df.merge.sel.sta)
+}
+
+```
+
+```{r}
+df.merge.sel = df.merge.sel.tmxmn
+# df.merge.sel = df.merge.sel.tmxmn %>%
+#   mutate(tmin = 2*temp-tmax,
+#          sim_tmin = 2*sim_temp-sim_tmax)
+```
+
+```{r}
+# Identify rows where sim_temp is not between sim_tmin and sim_tmax
+invalid_rows = df.merge.sel %>%
+  filter(!(sim_tmax > sim_temp & sim_temp > sim_tmin)) %>%
+  filter(!(tmax > temp & temp > tmin))
+
+# Check if there are any violations and print appropriate message
+if (nrow(invalid_rows) == 0) {
+  message("tmin and tmax simulation complete: No temperature violations found.")
+} else {
+  message("Temperature violations found: Displaying affected rows.")
+  print(invalid_rows)  # Adjust 'n' as needed to display more rows
+}
+
+```
+
+```{r}
+df.merge.sel$station = factor(df.merge.sel$station, levels = c("USS0005J42S", "USC00050848"))
+```
+
+
+```{r, fig.width=8, fig.height=6}
+df.sub = subset(df.merge.sel, simulation == "sim_1" & Tag == "Shuffled" & year == 1991)
+
+# Add variable for temperature type and source
+df.lines = bind_rows(
+  df.sub %>% dplyr::transmute(date, station, value = sim_tmax, temp_type = "Maximum", source = "Simulated"),
+  df.sub %>% dplyr::transmute(date, station, value = sim_temp, temp_type = "Average", source = "Simulated"),
+  df.sub %>% dplyr::transmute(date, station, value = sim_tmin, temp_type = "Minimum", source = "Simulated")
+)
+
+df.points = bind_rows(
+  df.sub %>% dplyr::transmute(date, station, value = tmax, temp_type = "Maximum", source = "Observed"),
+  df.sub %>% dplyr::transmute(date, station, value = temp, temp_type = "Average", source = "Observed"),
+  df.sub %>% dplyr::transmute(date, station, value = tmin, temp_type = "Minimum", source = "Observed")
+)
+
+# 1. Create a unified legend column
+df.lines$source_display = "Simulated"
+df.points$source_display = "Observed"
+
+# Ensure consistent factor ordering for temperature types
+temp_levels = c("Maximum", "Average", "Minimum")
+
+df.lines$temp_type = factor(df.lines$temp_type, levels = temp_levels)
+df.points$temp_type = factor(df.points$temp_type, levels = temp_levels)
+
+# Add legend group column to control legend appearance
+df.lines$legend_group = paste(df.lines$source, df.lines$temp_type)
+df.points$legend_group = paste(df.points$source, df.points$temp_type)
+
+p1 = ggplot() +
+  # Simulated: lines
+  geom_line(data = df.lines,
+            aes(x = date, y = value, color = temp_type, linetype = source_display), size = 0.75) +
+
+  # Observed: points
+  geom_point(data = df.points,
+             aes(x = date, y = value, color = temp_type, shape = source_display), size = 0.75) +
+
+  facet_wrap(~station) +
+  labs(y = "Temperature (°F)") +
+  scale_color_manual(values = c("Maximum" = "red", "Average" = "black", "Minimum" = "blue")) +
+  scale_shape_manual(values = c("Observed" = 16, "Simulated" = NA)) +
+  scale_linetype_manual(values = c("Simulated" = "solid", "Observed" = "blank")) +
+
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    axis.title = element_text(size = 12, face = "bold"),
+    axis.title.x = element_blank(),
+    legend.position = "none"  # 👈 This removes the legend completely
+  )
+
+
+# p1 = ggplot() +
+#   # Simulated: lines
+#   geom_line(data = df.lines,
+#             aes(x = date, y = value, color = temp_type, linetype = source_display), size = 0.75) +
+# 
+#   # Observed: points
+#   geom_point(data = df.points,
+#              aes(x = date, y = value, color = temp_type, shape = source_display), size = 0.75) +
+# 
+#   facet_wrap(~station) +
+#   labs(y = "Temperature (°F)") +  # No legend titles here
+#   scale_color_manual(values = c("Maximum" = "red", "Average" = "black", "Minimum" = "blue")) +
+#   scale_shape_manual(values = c("Observed" = 16, "Simulated" = NA)) +
+#   scale_linetype_manual(values = c("Simulated" = "solid", "Observed" = "blank")) +
+# 
+#   guides(
+#     shape = guide_legend(override.aes = list(size = 2)),
+#     linetype = guide_legend(override.aes = list(size = 0.8)),
+#     color = guide_legend(override.aes = list(size = 1.5))
+#   ) +
+# 
+#   theme_minimal() +
+#   theme(
+#     axis.text.x = element_text(angle = 45, hjust = 1),
+#     axis.title = element_text(size = 12, face = "bold"),
+#     axis.title.x = element_blank(),
+#     legend.position = "top",
+#     legend.direction = "horizontal",
+#     legend.title = element_blank()  # ⬅️ removes all legend titles
+#   )
+
+
+print(p1)
+
+ggsave("C:/Users/dwoodson/OneDrive - DOI/Documents/Projects/weatherGen/code/BoulderCounty/tempExtremaResults_oneYear.png", p1, dpi = 400)
+
+```
+
+
+```{r, fig.width=8, fig.height=6}
+# p1 = ggplot() +
+#   geom_line(data = subset(df.merge.sel, simulation == "sim_1" & Tag == "Shuffled" & year == 1991), 
+#             aes(x = date, y = sim_temp), color = "black") +
+#   geom_line(data = subset(df.merge.sel, simulation == "sim_1" & Tag == "Shuffled" & year == 1991), 
+#             aes(x = date, y = sim_tmin), color = "blue") +
+#   geom_line(data = subset(df.merge.sel, simulation == "sim_1" & Tag == "Shuffled" & year == 1991), 
+#             aes(x = date, y = sim_tmax), color = "red") +
+#   geom_point(data = subset(df.merge.sel, simulation == "sim_1" & Tag == "Shuffled" & year == 1991), 
+#              aes(x = date, y = temp), color = "black", size = 0.5) +
+#   geom_point(data = subset(df.merge.sel, simulation == "sim_1" & Tag == "Shuffled" & year == 1991), 
+#            aes(x = date, y = tmin), color = "blue", size = 0.5) +
+#   geom_point(data = subset(df.merge.sel, simulation == "sim_1" & Tag == "Shuffled" & year == 1991), 
+#            aes(x = date, y = tmax), color = "red", size = 0.5) +
+#   facet_wrap(~station) +
+#   labs(y = "Temperature (°C)", color = "Tag") +
+#   theme_minimal() +
+#   theme(axis.text.x = element_text(angle = 45, hjust = 1),
+#         axis.title = element_text(size = 12, face = "bold"),
+#         axis.title.x = element_blank(),
+#         legend.title = element_blank()
+#         )  # Rotate x-axis labels
+# 
+# print(p1)
+# 
+# ggsave("C:/Users/dwoodson/OneDrive - DOI/Documents/Projects/weatherGen/code/BoulderCounty/tempExtremaResults_oneYear.png", p1, dpi = 400)
+
+```
+
+#calc correlation on mid season dates
+```{r}
+safe_cor = function(x, y) {
+  idx = complete.cases(x, y)
+  if (sum(idx) > 1) {
+    return(cor(x[idx], y[idx], method = "spearman"))
+  } else {
+    return(NA)
+  }
+}
+
+```
+
+
+### loop thru dates, traces, obs vs shuff
+```{r}
+# Set up parallel backend
+num_cores = detectCores() - 1  # Use one less than the total available cores
+cl = makeCluster(num_cores)
+registerDoParallel(cl)
+
+# Initialize an empty list to store results
+df_list = list()
+
+# Define months, tags, simulations, and years
+months = 1:12
+Tags = unique(df.merge.sel$Tag)
+simz = unique(df.merge.sel$simulation)
+years = unique(df.merge.sel$year)
+selSta = unique(df.merge.sel$station)[1:2]  # Ensure at least 2 stations exist
+
+# Parallelized loop over simulations
+df_list = foreach(sim = simz, .combine = 'c', .packages = c("dplyr", "lubridate"),
+                  .export = c("safe_cor")) %dopar% {
+  temp_list = list()  # Temporary list for storing results
+  idx = 1  # Index counter for temp_list
+  
+  for (mo in months){
+    for (Tg in Tags){
+      for (yr in years){
+        df.sub = df.merge.sel %>%
+          filter(simulation == sim, month == mo, Tag == Tg, year == yr)
+        
+        df.sta1 = df.sub %>% filter(station == selSta[1])
+        df.sta2 = df.sub %>% filter(station == selSta[2])
+        
+        if (nrow(df.sta1) > 0 & nrow(df.sta2) > 0) {
+          if (Tg == "Unshuffled" & sim == "sim_1") {
+            temp_list[[idx]] = data.frame(
+              Simulation = "Observed",
+              Year = yr,
+              Month = mo,
+              Tag = "Observed",
+              c.p = safe_cor(df.sta1$prcp, df.sta2$prcp),
+              c.t = safe_cor(df.sta1$temp, df.sta2$temp),
+              c.tmx = safe_cor(df.sta1$tmax, df.sta2$tmax),
+              c.tmn = safe_cor(df.sta1$tmin, df.sta2$tmin),
+              c.p_t = safe_cor(df.sta1$prcp, df.sta2$temp),
+              c.p_tmx = safe_cor(df.sta1$prcp, df.sta2$tmax),
+              c.p_tmn = safe_cor(df.sta1$prcp, df.sta2$tmin),
+              c.t_tmx = safe_cor(df.sta1$temp, df.sta2$tmax),
+              c.t_tmn = safe_cor(df.sta1$temp, df.sta2$tmin),
+              c.tmx_tmn = safe_cor(df.sta1$tmax, df.sta2$tmin)
+              # c.p = cor(df.sta1$prcp, df.sta2$prcp, method = "spearman", use = "complete.obs"),
+              # c.t = cor(df.sta1$temp, df.sta2$temp, method = "spearman", use = "complete.obs"),
+              # c.tmx = cor(df.sta1$tmax, df.sta2$tmax, method = "spearman", use = "complete.obs"),
+              # c.tmn = cor(df.sta1$tmin, df.sta2$tmin, method = "spearman", use = "complete.obs"),
+              # c.p_t = cor(df.sta1$prcp, df.sta2$temp, method = "spearman", use = "complete.obs"),
+              # c.p_tmx = cor(df.sta1$prcp, df.sta2$tmax, method = "spearman", use = "complete.obs"),
+              # c.p_tmn = cor(df.sta1$prcp, df.sta2$tmin, method = "spearman", use = "complete.obs"),
+              # c.t_tmx = cor(df.sta1$temp, df.sta2$tmax, method = "spearman", use = "complete.obs"),
+              # c.t_tmn = cor(df.sta1$temp, df.sta2$tmin, method = "spearman", use = "complete.obs"),
+              # c.tmx_tmn = cor(df.sta1$tmax, df.sta2$tmin, method = "spearman", use = "complete.obs")
+            )
+            idx = idx + 1
+          }
+          
+          temp_list[[idx]] = data.frame(
+            Simulation = sim,
+            Year = yr,
+            Month = mo,
+            Tag = Tg,
+            c.p = safe_cor(df.sta1$sim_prcp, df.sta2$sim_prcp),
+            c.t = safe_cor(df.sta1$sim_temp, df.sta2$sim_temp),
+            c.tmx = safe_cor(df.sta1$sim_tmax, df.sta2$sim_tmax),
+            c.tmn = safe_cor(df.sta1$sim_tmin, df.sta2$sim_tmin),
+            c.p_t = safe_cor(df.sta1$sim_prcp, df.sta2$sim_temp),
+            c.p_tmx = safe_cor(df.sta1$sim_prcp, df.sta2$sim_tmax),
+            c.p_tmn = safe_cor(df.sta1$sim_prcp, df.sta2$sim_tmin),
+            c.t_tmx = safe_cor(df.sta1$sim_temp, df.sta2$sim_tmax),
+            c.t_tmn = safe_cor(df.sta1$sim_temp, df.sta2$sim_tmin),
+            c.tmx_tmn = safe_cor(df.sta1$sim_tmax, df.sta2$sim_tmin)
+            # c.p = cor(df.sta1$sim_prcp, df.sta2$sim_prcp, method = "spearman", use = "complete.obs"),
+            # c.t = cor(df.sta1$sim_temp, df.sta2$sim_temp, method = "spearman", use = "complete.obs"),
+            # c.tmx = cor(df.sta1$sim_tmax, df.sta2$sim_tmax, method = "spearman", use = "complete.obs"),
+            # c.tmn = cor(df.sta1$sim_tmin, df.sta2$sim_tmin, method = "spearman", use = "complete.obs"),
+            # c.p_t = cor(df.sta1$sim_prcp, df.sta2$sim_temp, method = "spearman", use = "complete.obs"),
+            # c.p_tmx = cor(df.sta1$sim_prcp, df.sta2$sim_tmax, method = "spearman", use = "complete.obs"),
+            # c.p_tmn = cor(df.sta1$sim_prcp, df.sta2$sim_tmin, method = "spearman", use = "complete.obs"),
+            # c.t_tmx = cor(df.sta1$sim_temp, df.sta2$sim_tmax, method = "spearman", use = "complete.obs"),
+            # c.t_tmn = cor(df.sta1$sim_temp, df.sta2$sim_tmin, method = "spearman", use = "complete.obs"),
+            # c.tmx_tmn = cor(df.sta1$sim_tmax, df.sta2$sim_tmin, method = "spearman", use = "complete.obs")
+          )
+          idx = idx + 1
+        }
+      }
+    }
+  }
+  temp_list  # Return results for this simulation
+}
+
+# Combine results into a single data frame
+df = bind_rows(df_list)
+
+# Stop the cluster
+stopCluster(cl)
+
+# Print result
+print(df)
+```
+
+```{r, fig.width=10, fig.height=10}
+# Pivot data to long format for easier plotting
+df_long <- df %>%
+  pivot_longer(cols = starts_with("c."),
+               names_to = "Correlation_Type",
+               values_to = "Correlation") %>%
+  mutate(Month = factor(month.abb[Month], levels = month.abb))  # Convert to abbreviated month names
+```
+
+```{r, fig.width=6, fig.height=6}
+corTypes = unique(df_long$Correlation_Type)
+# Define custom titles for each correlation type
+corTitles = c(
+  "c.p" = "Station 1 precip. correlation with station 2 precip.",
+  "c.t" = "Station 1 avg. temp. correlation with station 2 avg. temp.",
+  "c.tmx" = "Station 1 max temp. correlation with station 2 max temp.",
+  "c.tmn" = "Station 1 min temp. correlation with station 2 min temp.",
+  "c.p_t" = "Station 1 precip. correlation with station 2 avg. temp.",
+  "c.p_tmx" = "Station 1 precip. correlation with station 2 max temp.",
+  "c.p_tmn" = "Station 1 precip. correlation with station 2 min temp.",
+  "c.t_tmx" = "Station 1 avg. temp. correlation with station 2 max temp.",
+  "c.t_tmn" = "Station 1 avg. temp. correlation with station 2 min temp.",
+  "c.tmx_tmn" = "Station 1 max temp. correlation with station 2 min temp."
+)
+for(corType in corTypes){
+
+  df.sub = df_long %>%
+    filter(Correlation_Type == corType)
+  
+  # Get the title from corTitles, default to corType if not found
+  plotTitle = corTitles[corType]
+  
+  # Create the plot
+  p = ggplot(df.sub, aes(x = Tag, y = Correlation)) +
+    geom_boxplot(outlier.shape = NA, alpha = 0.7) + # Boxplots with transparency
+    # geom_jitter(position = position_jitterdodge(jitter.width = 0.2), alpha = 0.4) + # Jittered points for visibility
+    facet_wrap(~Month, nrow = 4) + # Facet by month and correlation type
+    scale_fill_manual(values = c("Observed" = "black", "Unshuffled" = "blue", "Shuffled" = "red")) + 
+    theme_minimal(base_size = 14) +
+    theme(
+      strip.text = element_text(size = 14, face = "bold"), # Facet labels
+      axis.text.x = element_text(angle = 45, hjust = 1), # Rotate x-axis labels
+      axis.title.x = element_blank(),  # Remove x-axis title
+      legend.position = "top",
+      panel.grid.major = element_line(color = "gray80"),
+      panel.grid.minor = element_blank(),
+      plot.title = element_text(size = 12),
+      axis.title = element_text(size = 12, face = "bold")
+    ) +
+    labs(
+      title = plotTitle,
+      # x = "",
+      y = "Spearman Correlation",
+      # fill = "Tag"
+    )
+
+  print(p)
+
+  ggsave(
+    paste0("C:/Users/dwoodson/OneDrive - DOI/Documents/Projects/weatherGen/code/BoulderCounty/crossCorResults_", corType ,".png"),
+    p, dpi = 400)
+}
+```
+
+
